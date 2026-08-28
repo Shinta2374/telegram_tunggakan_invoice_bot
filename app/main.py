@@ -1,109 +1,149 @@
-from app.services.customer_service import CustomerService
+"""
+Testing Tunggakan Service
+"""
+
 from app.services.tunggakan_service import TunggakanService
-from app.services.invoice_service import InvoiceService
 
 
-def rupiah(value):
-    return f"Rp{value:,.0f}".replace(",", ".")
+def format_rupiah(value):
 
-
-def tampilkan_tunggakan(data):
-
-    print("\n📄 INFORMASI TUNGGAKAN")
-    print("-" * 45)
-
-    print(f"Nama          : {data['nama']}")
-    print(f"ID Pelanggan  : {data['idnumber']}")
-    print(f"Saldo Akhir   : {rupiah(data['saldo_akhir'])}")
-
-    if len(data["tunggakan"]) == 0:
-
-        print("\n✅ Tidak memiliki tunggakan.")
-
-    else:
-
-        print("\nPeriode yang Masih Memiliki Tunggakan\n")
-
-        for item in data["tunggakan"]:
-
-            print(
-                f"{item['periode']} : {rupiah(item['nominal'])}"
-            )
+    return "Rp" + f"{value:,.0f}".replace(",", ".")
 
 
 def main():
 
-    customer_service = CustomerService()
-    tunggakan_service = TunggakanService()
-    invoice_service = InvoiceService()
+    print("=" * 60)
+    print("TEST TUNGGAKAN SERVICE")
+    print("=" * 60)
 
-    print("=" * 55)
-    print(" TELEGRAM CHATBOT SERVICES")
-    print("=" * 55)
+    service = TunggakanService()
 
     while True:
 
-        # ==========================
-        # LOGIN
-        # ==========================
+        print()
 
         idnumber = input(
-            "\nMasukkan ID Pelanggan (exit untuk keluar): "
+            "Masukkan ID Pelanggan "
+            "(exit untuk keluar): "
         ).strip()
 
         if idnumber.lower() == "exit":
+
+            print()
+            print("Program selesai.")
+
             break
 
-        customer = customer_service.find_by_id(idnumber)
+        if not idnumber:
 
-        if customer is None:
-
-            print("\n❌ ID Pelanggan tidak ditemukan.")
+            print(
+                "❌ ID Pelanggan tidak boleh kosong."
+            )
 
             continue
 
-        print("\n====================================")
-        print(f"Selamat datang, {customer['NAMA']}")
-        print("====================================")
+        result = service.get_tunggakan(
+            idnumber
+        )
 
-        # ==========================
-        # MENU
-        # ==========================
+        if result is None:
 
-        while True:
+            print()
+            print(
+                "❌ ID Pelanggan tidak ditemukan."
+            )
 
-            print("\n1. Informasi Tunggakan")
-            print("2. Status Invoice")
-            print("3. Ganti ID Pelanggan")
-            print("0. Keluar")
+            continue
 
-            menu = input("\nPilih Menu : ").strip()
+        # =====================================
+        # INFORMASI CUSTOMER
+        # =====================================
 
-            if menu == "1":
+        print()
+        print("===== INFORMASI CUSTOMER =====")
 
-                data = tunggakan_service.get_tunggakan(idnumber)
+        print(
+            "Nama          :",
+            result.get("nama") or "-"
+        )
 
-                tampilkan_tunggakan(data)
+        print(
+            "AM            :",
+            result.get("am") or "-"
+        )
 
-            elif menu == "2":
+        print(
+            "ID Pelanggan  :",
+            result.get("idnumber") or "-"
+        )
 
-                invoice = invoice_service.get_invoice(idnumber)
+        print(
+            "Saldo Akhir   :",
+            format_rupiah(
+                result.get(
+                    "saldo_akhir",
+                    0
+                )
+            )
+        )
 
-                print()
-                print(invoice["message"])
+        # =====================================
+        # AGING
+        # =====================================
 
-            elif menu == "3":
+        print()
+        print("===== AGING TUNGGAKAN =====")
 
-                # kembali meminta ID pelanggan
-                break
+        aging = result.get(
+            "aging",
+            []
+        )
 
-            elif menu == "0":
+        if aging:
 
-                return
+            for item in aging:
 
-            else:
+                print(
+                    f"{item['periode']:<15}: "
+                    f"{format_rupiah(item['nominal'])}"
+                )
 
-                print("\n❌ Menu tidak tersedia.")
+        else:
+
+            print(
+                "Tidak ada aging "
+                "7 bulan ke atas."
+            )
+
+        # =====================================
+        # TUNGGAKAN PERIODE
+        # =====================================
+
+        print()
+        print("===== TUNGGAKAN PERIODE =====")
+
+        tunggakan = result.get(
+            "tunggakan_periode",
+            []
+        )
+
+        if tunggakan:
+
+            for item in tunggakan:
+
+                print(
+                    f"{item['periode']:<15}: "
+                    f"{format_rupiah(item['nominal'])}"
+                )
+
+        else:
+
+            print(
+                "Tidak ada tunggakan periode."
+            )
+
+        print()
+        print("=" * 60)
 
 
 if __name__ == "__main__":

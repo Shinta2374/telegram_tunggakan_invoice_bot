@@ -1,3 +1,7 @@
+"""
+Konfigurasi utama Telegram Bot.
+"""
+
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -27,36 +31,42 @@ class TelegramBot:
 
     def register_handlers(self):
 
-        self.application.add_handler(
+        # ==================================================
+        # /START
+        # ==================================================
 
+        self.application.add_handler(
             CommandHandler(
                 "start",
                 start
             )
-
         )
 
-        self.application.add_handler(
+        # ==================================================
+        # CALLBACK
+        # ==================================================
 
+        self.application.add_handler(
+            CallbackQueryHandler(
+                callback_handler
+            )
+        )
+
+        # ==================================================
+        # TEXT MESSAGE
+        # ==================================================
+
+        self.application.add_handler(
             MessageHandler(
                 filters.TEXT & ~filters.COMMAND,
                 receive_message
             )
-
-        )
-
-        self.application.add_handler(
-
-            CallbackQueryHandler(
-                callback_handler
-            )
-
         )
 
     def run(self):
 
-        print("=" * 50)
+        print()
         print("Telegram Bot Running...")
-        print("=" * 50)
+        print()
 
         self.application.run_polling()

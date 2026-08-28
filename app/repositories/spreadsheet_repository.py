@@ -1,7 +1,3 @@
-"""
-Repository untuk mengambil data dari Google Spreadsheet.
-"""
-
 import pandas as pd
 
 from app.config.settings import settings
@@ -13,9 +9,6 @@ class SpreadsheetRepository:
         self.csv_url = settings.GOOGLE_SHEET_CSV_URL
 
     def get_dataframe(self):
-        """
-        Mengambil data dari Google Spreadsheet
-        """
 
         try:
             # Ambil seluruh data

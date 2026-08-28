@@ -21,3 +21,6 @@ logs
 # OS
 .DS_Store
 Thumbs.db
+
+# Invoice confidential data
+data/invoice/

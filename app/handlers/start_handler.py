@@ -1,19 +1,39 @@
 """
-Handler /start
+Handler command /start.
 """
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from app.handlers.customer_handler import (
+    show_ams
+)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    # ==========================================
+    # RESET STATE
+    # ==========================================
 
     context.user_data.clear()
 
-    await update.message.reply_text(
+    # ==========================================
+    # WELCOME
+    # ==========================================
 
-        "👋 Selamat datang di Telkom Customer Service\n\n"
+    if update.message:
 
-        "Silakan masukkan ID Pelanggan Anda."
+        await update.message.reply_text(
+            "Selamat datang di "
+            "Telegram Chatbot Services."
+        )
 
-    )
+        await show_ams(
+            update,
+            context,
+            page=0
+        )

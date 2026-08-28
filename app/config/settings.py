@@ -1,7 +1,3 @@
-"""
-Application Configuration
-"""
-
 import os
 from dotenv import load_dotenv
 
@@ -9,7 +5,6 @@ load_dotenv()
 
 
 class Settings:
-    """Application Settings"""
 
     APP_NAME = os.getenv("APP_NAME", "Telegram Chatbot Services")
     APP_VERSION = os.getenv("APP_VERSION", "1.0.0")

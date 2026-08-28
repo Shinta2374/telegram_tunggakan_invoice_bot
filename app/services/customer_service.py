@@ -1,4 +1,6 @@
-# Business Logic Customer
+"""
+Business Logic Customer
+"""
 
 from app.repositories.spreadsheet_repository import SpreadsheetRepository
 
@@ -7,27 +9,87 @@ class CustomerService:
 
     def __init__(self):
         self.repository = SpreadsheetRepository()
-        self.df = self.repository.get_dataframe()
 
-    def find_by_id(self, idnumber: str):
+    def get_all_customers(self):
         """
-        Mencari pelanggan berdasarkan ID.
+        Mengambil seluruh customer dari Spreadsheet.
+
+        Data Spreadsheet hanya dibaca.
+        Tidak ada proses write/update ke Spreadsheet.
         """
 
-        # Pastikan kolom idnumber berupa string
-        self.df["idnumber"] = (
-            self.df["idnumber"]
-            .astype(str)
-            .str.strip()
+        df = self.repository.get_dataframe()
+
+        return df.to_dict("records")
+
+    def find_by_id(self, idnumber):
+        """
+        Mencari customer berdasarkan ID pelanggan.
+        """
+
+        customers = self.get_all_customers()
+
+        target_id = str(idnumber).strip()
+
+        for customer in customers:
+
+            customer_id = str(
+                customer.get("idnumber", "")
+            ).strip()
+
+            if customer_id == target_id:
+                return customer
+
+        return None
+
+    def get_all_ams(self):
+        """
+        Mengambil daftar AM unik.
+
+        Sorting hanya dilakukan di memory.
+        Tidak mengubah Spreadsheet.
+        """
+
+        customers = self.get_all_customers()
+
+        ams = set()
+
+        for customer in customers:
+
+            am = str(
+                customer.get("AM", "")
+            ).strip()
+
+            if am:
+                ams.add(am)
+
+        return sorted(ams, key=str.lower)
+
+    def get_customers_by_am(self, am):
+        """
+        Mengambil customer berdasarkan AM.
+        """
+
+        customers = self.get_all_customers()
+
+        target_am = str(am).strip().lower()
+
+        result = []
+
+        for customer in customers:
+
+            customer_am = str(
+                customer.get("AM", "")
+            ).strip().lower()
+
+            if customer_am == target_am:
+                result.append(customer)
+
+        # Sorting hanya pada data di memory
+        result.sort(
+            key=lambda x: str(
+                x.get("NAMA", "")
+            ).strip().lower()
         )
 
-        idnumber = str(idnumber).strip()
-
-        customer = self.df[
-            self.df["idnumber"] == idnumber
-        ]
-
-        if customer.empty:
-            return None
-
-        return customer.iloc[0].to_dict()
+        return result

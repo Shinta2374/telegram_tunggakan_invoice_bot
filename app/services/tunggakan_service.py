@@ -1,5 +1,5 @@
 """
-Business Logic Informasi Tunggakan
+Business Logic Informasi Tunggakan.
 """
 
 from app.services.customer_service import CustomerService
@@ -8,9 +8,15 @@ from app.services.customer_service import CustomerService
 class TunggakanService:
 
     def __init__(self):
+
         self.customer_service = CustomerService()
 
-        # daftar kolom periode yang ingin dicek
+        self.aging_columns = [
+            ("7–12 bulan", "7-12_bln"),
+            ("13–24 bulan", "13-24_bln"),
+            ("> 24 bulan", ">_24_bln"),
+        ]
+
         self.periode_columns = [
             "202601",
             "202602",
@@ -27,55 +33,156 @@ class TunggakanService:
         ]
 
     def _to_number(self, value):
-        """
-        Mengubah nilai spreadsheet menjadi integer.
-        """
 
         if value is None:
             return 0
 
-        value = str(value).strip()
-
-        if value == "":
-            return 0
-
-        value = value.replace(".", "")
-        value = value.replace(",", "")
-
         try:
-            return int(float(value))
-        except:
+
+            if isinstance(value, float):
+
+                if value != value:
+                    return 0
+
+                return value
+
+            value = str(value).strip()
+
+            if not value:
+                return 0
+
+            value = (
+                value
+                .replace("Rp", "")
+                .replace(" ", "")
+            )
+
+            if "." in value and "," not in value:
+
+                parts = value.split(".")
+
+                if all(
+                    len(part) == 3
+                    for part in parts[1:]
+                ):
+                    value = "".join(parts)
+
+                else:
+                    value = value
+
+            elif "." in value and "," in value:
+
+                value = (
+                    value
+                    .replace(".", "")
+                    .replace(",", ".")
+                )
+
+            elif "," in value:
+
+                value = value.replace(",", ".")
+
+            return float(value)
+
+        except (
+            ValueError,
+            TypeError,
+        ):
             return 0
 
-    def get_tunggakan(self, idnumber):
+    def _get_period_value(
+        self,
+        customer,
+        periode,
+    ):
 
-        customer = self.customer_service.find_by_id(idnumber)
+        value = customer.get(periode)
+
+        if value is not None:
+            return value
+
+        value = customer.get(
+            f"{periode}.0"
+        )
+
+        if value is not None:
+            return value
+
+        return 0
+
+    def get_tunggakan(
+        self,
+        idnumber,
+    ):
+
+        customer = (
+            self.customer_service
+            .find_by_id(idnumber)
+        )
 
         if customer is None:
             return None
 
-        tunggakan = []
+        pelanggan = (
+            customer.get("pcTCYC")
+            or customer.get("PELANGGAN")
+            or customer.get("pelanggan")
+            or "-"
+        )
 
-        for periode in self.periode_columns:
+        am = (
+            customer.get("AM")
+            or customer.get("am")
+            or "-"
+        )
+
+        saldo_akhir_cyc = self._to_number(
+            customer.get("SALDO AKHIR CYC")
+        )
+
+        aging = []
+
+        for label, column in self.aging_columns:
 
             nominal = self._to_number(
-                customer.get(periode, 0)
+                customer.get(column)
             )
 
             if nominal > 0:
 
-                tunggakan.append({
+                aging.append({
+                    "periode": label,
+                    "nominal": nominal,
+                })
+
+        tunggakan_periode = []
+
+        for periode in self.periode_columns:
+
+            value = self._get_period_value(
+                customer,
+                periode,
+            )
+
+            nominal = self._to_number(
+                value
+            )
+
+            if nominal > 0:
+
+                tunggakan_periode.append({
                     "periode": periode,
-                    "nominal": nominal
+                    "nominal": nominal,
                 })
 
         return {
-            "nama": customer["NAMA"],
-            "idnumber": customer["idnumber"],
-            "am": customer["AM"],
-            "segmen": customer["segmen"],
-            "saldo_akhir": self._to_number(
-                customer.get("SALDO AKHIR CYC", 0)
+            "PELANGGAN": pelanggan,
+            "am": am,
+            "idnumber": (
+                customer.get("idnumber")
+                or idnumber
             ),
-            "tunggakan": tunggakan
+            "saldo_akhir_cyc": saldo_akhir_cyc,
+            "aging": aging,
+            "tunggakan_periode": tunggakan_periode,
         }
