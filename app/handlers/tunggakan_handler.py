@@ -1,22 +1,33 @@
-"""
-Handler untuk menampilkan informasi tunggakan customer.
-"""
-
 from telegram import (
+    Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+from telegram.ext import ContextTypes
 
-from app.services.tunggakan_service import (
-    TunggakanService,
-)
+from app.services.tunggakan_service import TunggakanService
 
 
 tunggakan_service = TunggakanService()
 
 
-def normalize(value):
+MONTH_NAMES = {
+    "01": "Januari",
+    "02": "Februari",
+    "03": "Maret",
+    "04": "April",
+    "05": "Mei",
+    "06": "Juni",
+    "07": "Juli",
+    "08": "Agustus",
+    "09": "September",
+    "10": "Oktober",
+    "11": "November",
+    "12": "Desember",
+}
 
+
+def normalize(value):
     if value is None:
         return ""
 
@@ -24,9 +35,7 @@ def normalize(value):
 
 
 def format_rupiah(value):
-
     try:
-
         number = float(value or 0)
 
         return (
@@ -38,49 +47,78 @@ def format_rupiah(value):
         ValueError,
         TypeError,
     ):
-
         return "Rp0"
+
+
+def format_periode(value):
+    periode = normalize(value)
+
+    if not periode:
+        return "-"
+
+    periode = periode.replace(
+        ".0",
+        "",
+    )
+
+    if len(periode) == 6 and periode.isdigit():
+
+        month = periode[4:6]
+
+        return MONTH_NAMES.get(
+            month,
+            periode,
+        )
+
+    return periode
 
 
 def build_tunggakan_text(result):
 
-    PELANGGAN = (
-        normalize(result.get("PELANGGAN"))
+    pelanggan = (
+        normalize(
+            result.get("PELANGGAN")
+        )
         or "-"
     )
 
     idnumber = (
-        normalize(result.get("idnumber"))
+        normalize(
+            result.get("idnumber")
+        )
         or "-"
     )
 
     am = (
-        normalize(result.get("am"))
+        normalize(
+            result.get("am")
+        )
         or "-"
     )
 
     saldo = result.get(
         "saldo_akhir_cyc",
-        0
+        0,
     )
 
     text = (
-        "📄 INFORMASI TUNGGAKAN\n\n"
-        f"🏢 {PELANGGAN}\n"
-        f"🆔 `{idnumber}`\n"
-        f"👤 {am}\n\n"
-        f"💰 **Saldo Akhir CYC:** "
-        f"{format_rupiah(saldo)}\n"
+        "INFORMASI TUNGGAKAN\n\n"
+        f"{pelanggan} ({idnumber})\n"
+        f"{am}\n"
     )
+
+    # =========================================================
+    # AGING TUNGGAKAN
+    # =========================================================
 
     aging = result.get(
         "aging",
-        []
+        [],
     )
 
     if aging:
 
-        text += "\n**AGING TUNGGAKAN**\n"
+        aging_lines = []
 
         for item in aging:
 
@@ -90,67 +128,109 @@ def build_tunggakan_text(result):
 
             nominal = item.get(
                 "nominal",
-                0
+                0,
             )
 
             if not nominal:
                 continue
 
-            text += (
-                f"• {periode}: "
-                f"{format_rupiah(nominal)}\n"
+            aging_lines.append(
+                f"{periode}: "
+                f"{format_rupiah(nominal)}"
             )
+
+        if aging_lines:
+
+            text += (
+                "\n"
+                "────────────────────────────\n"
+                "AGING TUNGGAKAN\n"
+            )
+
+            for line in aging_lines:
+
+                text += (
+                    f"{line}\n"
+                )
+
+    # =========================================================
+    # TUNGGAKAN 2026
+    # =========================================================
 
     tunggakan_periode = result.get(
         "tunggakan_periode",
-        []
+        [],
+    )
+
+    text += (
+        "\n"
+        "────────────────────────────\n"
+        "TUNGGAKAN 2026\n"
     )
 
     if tunggakan_periode:
 
-        text += (
-            "\n"
-            "**PERIODE YANG MASIH MEMILIKI "
-            "TUNGGAKAN**\n"
-        )
+        periode_lines = []
 
         for item in tunggakan_periode:
 
-            periode = normalize(
+            periode = format_periode(
                 item.get("periode")
             )
 
             nominal = item.get(
                 "nominal",
-                0
+                0,
             )
 
             if not nominal:
                 continue
 
-            text += (
+            periode_lines.append(
                 f"• {periode}: "
-                f"{format_rupiah(nominal)}\n"
+                f"{format_rupiah(nominal)}"
+            )
+
+        if periode_lines:
+
+            for line in periode_lines:
+
+                text += (
+                    f"{line}\n"
+                )
+
+        else:
+
+            text += (
+                "Tidak ada tunggakan "
+                "pada periode berjalan.\n"
             )
 
     else:
 
         text += (
-            "\n"
-            "**PERIODE YANG MASIH MEMILIKI "
-            "TUNGGAKAN**\n"
             "Tidak ada tunggakan "
-            "pada periode berjalan."
+            "pada periode berjalan.\n"
         )
+
+    # =========================================================
+    # TOTAL CYC
+    # =========================================================
+
+    text += (
+        "\n"
+        "────────────────────────────\n"
+        "TOTAL CYC\n"
+        f"{format_rupiah(saldo)}\n"
+    )
 
     return text
 
 
 async def show_tunggakan(
     query,
-    context,
+    context: ContextTypes.DEFAULT_TYPE,
 ):
-
     customer_id = context.user_data.get(
         "selected_customer_id"
     )
@@ -162,7 +242,7 @@ async def show_tunggakan(
     if not customer_id:
 
         await query.message.reply_text(
-            "❌ ID Pelanggan belum tersedia."
+            "ID Pelanggan belum tersedia."
         )
 
         return
@@ -177,13 +257,14 @@ async def show_tunggakan(
         )
 
         print(
-            f"[SHOW TUNGGAKAN] RESULT = {result}"
+            "[SHOW TUNGGAKAN] "
+            f"RESULT = {result}"
         )
 
         if not result:
 
             await query.message.reply_text(
-                "❌ Data tunggakan tidak ditemukan."
+                "Data tunggakan tidak ditemukan."
             )
 
             return
@@ -195,8 +276,8 @@ async def show_tunggakan(
         keyboard = [
             [
                 InlineKeyboardButton(
-                    "⬅️ Kembali ke Customer",
-                    callback_data="close_detail"
+                    "Kembali ke Customer",
+                    callback_data="close_detail",
                 )
             ]
         ]
@@ -221,9 +302,14 @@ async def show_tunggakan(
             query.message.chat_id
         )
 
+        # =====================================================
+        # EDIT DETAIL MESSAGE YANG SUDAH ADA
+        # =====================================================
+
         if (
             detail_message_id
-            and detail_chat_id == current_chat_id
+            and detail_chat_id
+            == current_chat_id
         ):
 
             try:
@@ -233,7 +319,6 @@ async def show_tunggakan(
                     message_id=detail_message_id,
                     text=text,
                     reply_markup=markup,
-                    parse_mode="Markdown",
                 )
 
                 context.user_data[
@@ -245,14 +330,33 @@ async def show_tunggakan(
             except Exception as e:
 
                 print(
-                    f"[DETAIL EDIT ERROR] {e}"
+                    "[DETAIL EDIT ERROR] "
+                    f"{e}"
                 )
+
+                context.user_data.pop(
+                    "detail_message_id",
+                    None,
+                )
+
+                context.user_data.pop(
+                    "detail_chat_id",
+                    None,
+                )
+
+                context.user_data.pop(
+                    "detail_type",
+                    None,
+                )
+
+        # =====================================================
+        # BUAT DETAIL MESSAGE BARU
+        # =====================================================
 
         message = (
             await query.message.reply_text(
                 text=text,
                 reply_markup=markup,
-                parse_mode="Markdown",
             )
         )
 
@@ -291,10 +395,29 @@ async def show_tunggakan(
         )
 
         print(
+            f"Error       : {e}"
+        )
+
+        print(
             "======================================"
         )
 
         await query.message.reply_text(
-            "❌ Terjadi kesalahan saat "
+            "Terjadi kesalahan saat "
             "mengambil data tunggakan."
         )
+
+
+async def show_tunggakan_from_update(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.callback_query
+
+    if not query:
+        return
+
+    await show_tunggakan(
+        query,
+        context,
+    )

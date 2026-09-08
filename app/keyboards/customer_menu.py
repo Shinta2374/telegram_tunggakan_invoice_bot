@@ -1,7 +1,3 @@
-"""
-Keyboard untuk daftar customer.
-"""
-
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 
@@ -36,18 +32,16 @@ def get_customer_menu(
 
         keyboard.append([
             InlineKeyboardButton(
-                f"📄 {nama_display}",
+                f"{nama_display}",
                 callback_data=f"tunggakan:{idnumber}"
             ),
             InlineKeyboardButton(
-                "📧 Invoice",
+                "Invoice",
                 callback_data=f"invoice:{idnumber}"
             )
         ])
 
-    # =========================
     # PAGINATION
-    # =========================
 
     total_pages = max(
         1,
@@ -60,7 +54,7 @@ def get_customer_menu(
 
         navigation.append(
             InlineKeyboardButton(
-                "◀",
+                "Sebelumnya",
                 callback_data=f"customer_page:{page - 1}"
             )
         )
@@ -76,20 +70,18 @@ def get_customer_menu(
 
         navigation.append(
             InlineKeyboardButton(
-                "▶",
+                "Selanjutnya",
                 callback_data=f"customer_page:{page + 1}"
             )
         )
 
     keyboard.append(navigation)
 
-    # =========================
     # SEARCH
-    # =========================
 
     keyboard.append([
         InlineKeyboardButton(
-            "🔍 Cari Customer",
+            "Cari Customer",
             callback_data="search_customer"
         )
     ])
@@ -100,7 +92,7 @@ def get_customer_menu(
 
     keyboard.append([
         InlineKeyboardButton(
-            "⬅️ Kembali ke AM",
+            "Kembali ke AM",
             callback_data="back_to_am"
         )
     ])

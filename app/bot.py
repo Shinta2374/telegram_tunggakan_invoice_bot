@@ -15,6 +15,7 @@ from app.config.settings import settings
 from app.handlers.start_handler import start
 from app.handlers.message_handler import receive_message
 from app.handlers.callback_handler import callback_handler
+from app.handlers.command_handler import command_handler
 
 
 class TelegramBot:
@@ -38,7 +39,25 @@ class TelegramBot:
         self.application.add_handler(
             CommandHandler(
                 "start",
-                start
+                start,
+            )
+        )
+
+        # ==================================================
+        # COMMAND
+        # ==================================================
+
+        self.application.add_handler(
+            CommandHandler(
+                [
+                    "tgkn",
+                    "inv",
+                    "cyc",
+                    "am",
+                    "cust",
+                    "help",
+                ],
+                command_handler,
             )
         )
 
@@ -48,7 +67,7 @@ class TelegramBot:
 
         self.application.add_handler(
             CallbackQueryHandler(
-                callback_handler
+                callback_handler,
             )
         )
 
@@ -59,7 +78,7 @@ class TelegramBot:
         self.application.add_handler(
             MessageHandler(
                 filters.TEXT & ~filters.COMMAND,
-                receive_message
+                receive_message,
             )
         )
 
@@ -67,6 +86,11 @@ class TelegramBot:
 
         print()
         print("Telegram Bot Running...")
+        print()
+        print(
+            "Registered commands: "
+            "/start /tgkn /inv /cyc /am /cust /help"
+        )
         print()
 
         self.application.run_polling()

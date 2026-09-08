@@ -1,13 +1,9 @@
-from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-)
-
+from telegram import Update
 from telegram.ext import ContextTypes
 
 from app.handlers.customer_handler import (
     show_ams,
+    show_customer_menu,
     show_customers,
 )
 
@@ -15,19 +11,15 @@ from app.handlers.tunggakan_handler import (
     show_tunggakan,
 )
 
-from app.services.invoice_service import (
-    InvoiceService,
+from app.handlers.invoice_handler import (
+    show_invoice,
 )
-
-
-invoice_service = InvoiceService()
 
 
 async def callback_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-
     query = update.callback_query
 
     if not query:
@@ -41,16 +33,145 @@ async def callback_handler(
         f"[CALLBACK] {data}"
     )
 
+    if not data:
+        return
+
     if data == "noop":
         return
 
-    # Pilih AM
+    # =========================================================
+    # COMMAND SEARCH CUSTOMER
+    # =========================================================
+
+    if data.startswith("command_customer:"):
+
+        parts = data.split(":", 2)
+
+        if len(parts) != 3:
+            print(
+                "[CALLBACK ERROR] "
+                f"Format command_customer tidak valid: {data}"
+            )
+            return
+
+        command = parts[1].strip()
+        customer_id = parts[2].strip()
+
+        print(
+            f"[COMMAND CUSTOMER] "
+            f"Command = {command} | "
+            f"ID = {customer_id}"
+        )
+
+        if not customer_id:
+            print(
+                "[CALLBACK ERROR] "
+                "Customer ID kosong."
+            )
+            return
+
+        context.user_data[
+            "selected_customer_id"
+        ] = customer_id
+
+        context.user_data[
+            "customer_list_message_id"
+        ] = query.message.message_id
+
+        context.user_data[
+            "customer_list_chat_id"
+        ] = query.message.chat_id
+
+        if command == "tunggakan":
+
+            context.user_data[
+                "active_menu"
+            ] = "tunggakan"
+
+            print(
+                f"[COMMAND TUNGGAKAN] "
+                f"ID = {customer_id}"
+            )
+
+            await show_tunggakan(
+                query,
+                context,
+            )
+
+            return
+
+        if command == "invoice":
+
+            context.user_data[
+                "active_menu"
+            ] = "invoice"
+
+            print(
+                f"[COMMAND INVOICE] "
+                f"ID = {customer_id}"
+            )
+
+            await show_invoice(
+                query,
+                context,
+            )
+
+            return
+
+        if command == "cyc":
+
+            context.user_data[
+                "active_menu"
+            ] = "cyc"
+
+            print(
+                f"[COMMAND CYC] "
+                f"ID = {customer_id}"
+            )
+
+            await show_tunggakan(
+                query,
+                context,
+            )
+
+            return
+
+        if command == "customer":
+
+            context.user_data[
+                "active_menu"
+            ] = "customer"
+
+            print(
+                f"[COMMAND CUSTOMER] "
+                f"ID = {customer_id}"
+            )
+
+            await show_customer_info(
+                query,
+                context,
+            )
+
+            return
+
+        print(
+            "[CALLBACK ERROR] "
+            f"Command tidak dikenal: {command}"
+        )
+
+        return
+
+    # =========================================================
+    # PILIH AM
+    # =========================================================
+
     if data.startswith("select_am:"):
 
-        am_name = data.split(
-            ":",
-            1,
-        )[1].strip()
+        am_name = (
+            data
+            .split(":", 1)[1]
+            .strip()
+        )
 
         print(
             f"[AM DIPILIH] {am_name}"
@@ -59,6 +180,125 @@ async def callback_handler(
         context.user_data[
             "current_am"
         ] = am_name
+
+        context.user_data[
+            "active_menu"
+        ] = None
+
+        context.user_data[
+            "customer_page"
+        ] = 0
+
+        context.user_data[
+            "selected_customer_id"
+        ] = None
+
+        clear_detail_state(
+            context
+        )
+
+        await show_customer_menu(
+            update,
+            context,
+        )
+
+        return
+
+    # =========================================================
+    # PAGINATION AM
+    # =========================================================
+
+    if data.startswith("am_page:"):
+
+        try:
+            page = int(
+                data
+                .split(":", 1)[1]
+            )
+
+        except (
+            ValueError,
+            IndexError,
+        ):
+            page = 0
+
+        await show_ams(
+            update,
+            context,
+            page=page,
+        )
+
+        return
+
+    # =========================================================
+    # KEMBALI KE LIST AM
+    # =========================================================
+
+    if data == "back_to_ams":
+
+        await delete_detail_message(
+            query,
+            context,
+        )
+
+        context.user_data[
+            "current_am"
+        ] = None
+
+        context.user_data[
+            "active_menu"
+        ] = None
+
+        context.user_data[
+            "customer_page"
+        ] = 0
+
+        context.user_data[
+            "selected_customer_id"
+        ] = None
+
+        clear_detail_state(
+            context
+        )
+
+        await show_ams(
+            update,
+            context,
+            page=0,
+        )
+
+        return
+
+    # =========================================================
+    # PILIH MENU CUSTOMER
+    # =========================================================
+
+    if data.startswith("customer_menu:"):
+
+        menu = (
+            data
+            .split(":", 1)[1]
+            .strip()
+        )
+
+        if menu not in (
+            "invoice",
+            "tunggakan",
+            "pelanggan_tunggakan",
+        ):
+            print(
+                f"[CALLBACK ERROR] "
+                f"Menu tidak valid: {menu}"
+            )
+            return
+
+        print(
+            f"[MENU DIPILIH] {menu}"
+        )
+
+        context.user_data[
+            "active_menu"
+        ] = menu
 
         context.user_data[
             "customer_page"
@@ -80,44 +320,32 @@ async def callback_handler(
 
         return
 
-    # Pagination AM
-    if data.startswith("am_page:"):
+    # =========================================================
+    # KOMPATIBILITAS CALLBACK LAMA
+    # =========================================================
 
-        try:
+    if data.startswith("am_menu:"):
 
-            page = int(
-                data.split(
-                    ":",
-                    1,
-                )[1]
-            )
-
-        except (
-            ValueError,
-            IndexError,
-        ):
-
-            print(
-                f"[CALLBACK ERROR] "
-                f"Invalid AM page: {data}"
-            )
-
-            return
-
-        await show_ams(
-            update,
-            context,
-            page=page,
+        menu = (
+            data
+            .split(":", 1)[1]
+            .strip()
         )
 
-        return
-
-    # Kembali ke AM
-    if data == "back_to_ams":
+        if menu not in (
+            "invoice",
+            "tunggakan",
+            "pelanggan_tunggakan",
+        ):
+            print(
+                f"[CALLBACK ERROR] "
+                f"Menu tidak valid: {menu}"
+            )
+            return
 
         context.user_data[
-            "current_am"
-        ] = None
+            "active_menu"
+        ] = menu
 
         context.user_data[
             "customer_page"
@@ -131,7 +359,7 @@ async def callback_handler(
             context
         )
 
-        await show_ams(
+        await show_customers(
             update,
             context,
             page=0,
@@ -139,29 +367,23 @@ async def callback_handler(
 
         return
 
-    # Pagination customer
+    # =========================================================
+    # PAGINATION CUSTOMER
+    # =========================================================
+
     if data.startswith("customer_page:"):
 
         try:
-
             page = int(
-                data.split(
-                    ":",
-                    1,
-                )[1]
+                data
+                .split(":", 1)[1]
             )
 
         except (
             ValueError,
             IndexError,
         ):
-
-            print(
-                f"[CALLBACK ERROR] "
-                f"Invalid customer page: {data}"
-            )
-
-            return
+            page = 0
 
         context.user_data[
             "customer_page"
@@ -183,7 +405,142 @@ async def callback_handler(
 
         return
 
-    # Search AM
+    # =========================================================
+    # PILIH CUSTOMER DARI LIST NORMAL
+    # =========================================================
+
+    if data.startswith("customer_select:"):
+
+        customer_id = (
+            data
+            .split(":", 1)[1]
+            .strip()
+        )
+
+        print(
+            f"[CUSTOMER DIPILIH] "
+            f"{customer_id}"
+        )
+
+        context.user_data[
+            "customer_list_message_id"
+        ] = query.message.message_id
+
+        context.user_data[
+            "customer_list_chat_id"
+        ] = query.message.chat_id
+
+        context.user_data[
+            "selected_customer_id"
+        ] = customer_id
+
+        active_menu = (
+            context.user_data.get(
+                "active_menu"
+            )
+        )
+
+        if active_menu == "invoice":
+
+            print(
+                f"[INVOICE] "
+                f"ID = {customer_id}"
+            )
+
+            await show_invoice(
+                query,
+                context,
+            )
+
+            return
+
+        if active_menu in (
+            "tunggakan",
+            "pelanggan_tunggakan",
+        ):
+
+            print(
+                f"[TUNGGAKAN] "
+                f"ID = {customer_id}"
+            )
+
+            await show_tunggakan(
+                query,
+                context,
+            )
+
+            return
+
+        print(
+            "[CALLBACK ERROR] "
+            "Active menu tidak tersedia."
+        )
+
+        return
+
+    # =========================================================
+    # KEMBALI DARI DETAIL KE LIST CUSTOMER
+    # =========================================================
+
+    if data in (
+        "close_detail",
+        "back_to_customer_list",
+        "back_to_customers",
+    ):
+
+        await delete_detail_message(
+            query,
+            context,
+        )
+
+        context.user_data[
+            "selected_customer_id"
+        ] = None
+
+        clear_detail_state(
+            context
+        )
+
+        await restore_customer_list(
+            query,
+            context,
+        )
+
+        return
+
+    # =========================================================
+    # KEMBALI KE MENU AM
+    # =========================================================
+
+    if data == "back_to_customer_menu":
+
+        context.user_data[
+            "customer_page"
+        ] = 0
+
+        context.user_data[
+            "selected_customer_id"
+        ] = None
+
+        context.user_data[
+            "active_menu"
+        ] = None
+
+        clear_detail_state(
+            context
+        )
+
+        await show_customer_menu(
+            update,
+            context,
+        )
+
+        return
+
+    # =========================================================
+    # SEARCH AM
+    # =========================================================
+
     if data == "search_am":
 
         context.user_data[
@@ -197,7 +554,10 @@ async def callback_handler(
 
         return
 
-    # Search customer
+    # =========================================================
+    # SEARCH CUSTOMER
+    # =========================================================
+
     if data == "search_customer":
 
         context.user_data[
@@ -211,93 +571,200 @@ async def callback_handler(
 
         return
 
-    # Tunggakan
-    if data.startswith("tunggakan:"):
+    print(
+        f"[WARNING] "
+        f"Callback tidak dikenal: {data}"
+    )
 
-        customer_id = data.split(
-            ":",
-            1,
-        )[1].strip()
 
-        print(
-            f"[TUNGGAKAN] ID = {customer_id}"
+async def show_customer_info(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    customer_id = (
+        context.user_data.get(
+            "selected_customer_id"
+        )
+    )
+
+    if not customer_id:
+        await query.message.reply_text(
+            "ID Pelanggan belum tersedia."
+        )
+        return
+
+    from app.services.customer_service import CustomerService
+
+    customer_service = CustomerService()
+
+    customers = (
+        customer_service
+        .get_all_customers()
+    )
+
+    target_customer = None
+
+    for customer in customers:
+
+        customer_id_value = (
+            customer.get("idnumber")
+            or customer.get("ID")
+            or customer.get("id")
         )
 
-        context.user_data[
-            "selected_customer_id"
-        ] = customer_id
+        if customer_id_value is None:
+            continue
 
-        await show_tunggakan(
-            query,
-            context,
+        normalized_id = str(
+            customer_id_value
+        ).strip()
+
+        if normalized_id.endswith(".0"):
+            normalized_id = normalized_id[:-2]
+
+        if normalized_id == str(
+            customer_id
+        ).strip():
+            target_customer = customer
+            break
+
+    if not target_customer:
+
+        await query.message.reply_text(
+            "Data pelanggan tidak ditemukan."
         )
 
         return
 
-    # Invoice
-    if data.startswith("invoice:"):
+    pelanggan = (
+        target_customer.get("PELANGGAN")
+        or target_customer.get("nama")
+        or target_customer.get("CUSTOMER")
+        or target_customer.get("pcTCYC")
+        or "-"
+    )
 
-        customer_id = data.split(
-            ":",
-            1,
-        )[1].strip()
+    am = (
+        target_customer.get("AM")
+        or target_customer.get("am")
+        or "-"
+    )
 
-        print(
-            f"[INVOICE] ID = {customer_id}"
+    text = (
+        "INFORMASI PELANGGAN\n\n"
+        f"{pelanggan} ({customer_id})\n"
+        f"{am}"
+    )
+
+    await query.message.reply_text(
+        text
+    )
+
+
+async def delete_detail_message(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    detail_message_id = (
+        context.user_data.get(
+            "detail_message_id"
+        )
+    )
+
+    detail_chat_id = (
+        context.user_data.get(
+            "detail_chat_id"
+        )
+    )
+
+    if not detail_message_id:
+        return
+
+    if not detail_chat_id:
+        return
+
+    try:
+
+        await query.get_bot().delete_message(
+            chat_id=detail_chat_id,
+            message_id=detail_message_id,
         )
 
-        context.user_data[
-            "selected_customer_id"
-        ] = customer_id
+        print(
+            "[DETAIL] Pesan detail dihapus."
+        )
 
-        await show_invoice(
-            query,
-            context,
+    except Exception as e:
+
+        print(
+            f"[DELETE DETAIL ERROR] {e}"
+        )
+
+
+async def restore_customer_list(
+    query,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    list_message_id = (
+        context.user_data.get(
+            "customer_list_message_id"
+        )
+    )
+
+    list_chat_id = (
+        context.user_data.get(
+            "customer_list_chat_id"
+        )
+    )
+
+    page = context.user_data.get(
+        "customer_page",
+        0,
+    )
+
+    if not list_message_id:
+
+        print(
+            "[LIST] ID pesan list "
+            "tidak ditemukan."
         )
 
         return
 
-    # Kembali ke customer
-    if data in (
-        "back_to_customers",
-        "close_detail",
-    ):
-
-        page = context.user_data.get(
-            "customer_page",
-            0,
-        )
+    if not list_chat_id:
 
         print(
-            f"[CLOSE DETAIL] "
-            f"Customer page = {page}"
+            "[LIST] Chat ID list "
+            "tidak ditemukan."
         )
 
-        context.user_data[
-            "selected_customer_id"
-        ] = None
+        return
 
-        clear_detail_state(
-            context
-        )
+    try:
 
         await show_customers(
-            update,
-            context,
+            update=query,
+            context=context,
             page=page,
+            message_id=list_message_id,
+            chat_id=list_chat_id,
         )
 
-        return
+        print(
+            "[LIST] List customer "
+            "dikembalikan."
+        )
 
-    print(
-        f"[WARNING] Callback tidak dikenal: {data}"
-    )
+    except Exception as e:
+
+        print(
+            f"[RESTORE LIST ERROR] {e}"
+        )
 
 
 def clear_detail_state(
     context: ContextTypes.DEFAULT_TYPE,
 ):
-
     context.user_data.pop(
         "detail_message_id",
         None,
@@ -312,335 +779,3 @@ def clear_detail_state(
         "detail_type",
         None,
     )
-
-
-def format_rupiah(
-    value,
-):
-
-    try:
-
-        number = float(
-            value or 0
-        )
-
-        return (
-            f"Rp{number:,.0f}"
-            .replace(
-                ",",
-                ".",
-            )
-        )
-
-    except (
-        ValueError,
-        TypeError,
-    ):
-
-        return "Rp0"
-
-
-def normalize_invoice_status(
-    status,
-):
-
-    if status is None:
-        return "Belum Terkirim"
-
-    status = str(
-        status
-    ).strip()
-
-    if not status:
-        return "Belum Terkirim"
-
-    normalized = status.lower()
-
-    if (
-        "no data to display"
-        in normalized
-    ):
-
-        return "Belum Terkirim"
-
-    if normalized in (
-        "#n/a",
-        "n/a",
-    ):
-
-        return "On Progress"
-
-    if "manual" in normalized:
-
-        return "Invoice Manual"
-
-    return status
-
-
-def build_invoice_text(
-    invoices,
-):
-
-    if not invoices:
-
-        return (
-            "<b>INFORMASI INVOICE</b>\n\n"
-            "Tidak terdapat data invoice "
-            "untuk customer ini."
-        )
-
-    first = invoices[0]
-
-    customer_id = (
-        first.get(
-            "customer_id"
-        )
-        or first.get(
-            "no_jastel"
-        )
-        or "-"
-    )
-
-    customer_name = (
-        first.get(
-            "pelanggan"
-        )
-        or first.get(
-            "contr_account_detail"
-        )
-        or "-"
-    )
-
-    text = (
-        "<b>INFORMASI INVOICE</b>\n\n"
-        f"<b>Customer</b>\n"
-        f"{customer_name}\n\n"
-        f"<b>ID Pelanggan</b>\n"
-        f"<code>{customer_id}</code>\n\n"
-        f"<b>Total Invoice:</b> "
-        f"{len(invoices)}"
-    )
-
-    for index, invoice in enumerate(
-        invoices,
-        start=1,
-    ):
-
-        periode = (
-            invoice.get(
-                "periode"
-            )
-            or invoice.get(
-                "bill_pe"
-            )
-            or "-"
-        )
-
-        billing_amount = invoice.get(
-            "billing_amount",
-            0,
-        )
-
-        ppn = invoice.get(
-            "ppn",
-            0,
-        )
-
-        total_amount = invoice.get(
-            "total_amount",
-            0,
-        )
-
-        raw_status = (
-            invoice.get(
-                "status"
-            )
-            or invoice.get(
-                "stts"
-            )
-        )
-
-        status = normalize_invoice_status(
-            raw_status
-        )
-
-        text += (
-            "\n\n"
-            "────────────────────\n"
-            f"<b>Invoice {index}</b>\n\n"
-            f"Periode: {periode}\n"
-            f"Billing Amount: "
-            f"{format_rupiah(billing_amount)}\n"
-            f"PPN: "
-            f"{format_rupiah(ppn)}\n"
-            f"Total Amount: "
-            f"{format_rupiah(total_amount)}\n"
-            f"Status: <b>{status}</b>"
-        )
-
-    return text
-
-
-async def show_invoice(
-    query,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-
-    customer_id = (
-        context.user_data.get(
-            "selected_customer_id"
-        )
-    )
-
-    print(
-        f"[SHOW INVOICE] ID = {customer_id}"
-    )
-
-    if not customer_id:
-
-        await query.message.reply_text(
-            "ID Pelanggan belum tersedia."
-        )
-
-        return
-
-    try:
-
-        if not invoice_service.file_exists():
-
-            raise FileNotFoundError(
-                "File invoice tidak ditemukan: "
-                f"{invoice_service.file_path}"
-            )
-
-        invoices = (
-            invoice_service
-            .get_customer_invoice_data(
-                customer_id
-            )
-        )
-
-        if invoices is None:
-            invoices = []
-
-        print(
-            "[SHOW INVOICE] "
-            f"Jumlah invoice = {len(invoices)}"
-        )
-
-        text = build_invoice_text(
-            invoices
-        )
-
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "⬅ Kembali ke Customer",
-                    callback_data="close_detail",
-                )
-            ]
-        ]
-
-        markup = InlineKeyboardMarkup(
-            keyboard
-        )
-
-        detail_message_id = (
-            context.user_data.get(
-                "detail_message_id"
-            )
-        )
-
-        detail_chat_id = (
-            context.user_data.get(
-                "detail_chat_id"
-            )
-        )
-
-        current_chat_id = (
-            query.message.chat_id
-        )
-
-        if (
-            detail_message_id
-            and detail_chat_id
-            == current_chat_id
-        ):
-
-            try:
-
-                await query.get_bot().edit_message_text(
-                    chat_id=detail_chat_id,
-                    message_id=detail_message_id,
-                    text=text,
-                    reply_markup=markup,
-                    parse_mode="HTML",
-                )
-
-                context.user_data[
-                    "detail_type"
-                ] = "invoice"
-
-                return
-
-            except Exception as e:
-
-                print(
-                    "[INVOICE EDIT ERROR] "
-                    f"{e}"
-                )
-
-                clear_detail_state(
-                    context
-                )
-
-        message = (
-            await query.message.reply_text(
-                text=text,
-                reply_markup=markup,
-                parse_mode="HTML",
-            )
-        )
-
-        context.user_data[
-            "detail_message_id"
-        ] = message.message_id
-
-        context.user_data[
-            "detail_chat_id"
-        ] = message.chat_id
-
-        context.user_data[
-            "detail_type"
-        ] = "invoice"
-
-    except Exception as e:
-
-        print(
-            "======================================"
-        )
-
-        print(
-            "[INVOICE ERROR]"
-        )
-
-        print(
-            f"Customer ID : {customer_id}"
-        )
-
-        print(
-            f"Error Type  : {type(e).__name__}"
-        )
-
-        print(
-            f"Error       : {e}"
-        )
-
-        print(
-            "======================================"
-        )
-
-        await query.message.reply_text(
-            "Terjadi kesalahan saat "
-            "mengambil data invoice."
-        )

@@ -40,13 +40,13 @@ def get_customer_menu(
 
         # Tombol tunggakan
         tunggakan_button = InlineKeyboardButton(
-            "📄 Tunggakan",
+            "Tunggakan",
             callback_data=f"tunggakan_{idnumber}"
         )
 
         # Tombol invoice
         invoice_button = InlineKeyboardButton(
-            "📧 Invoice",
+            "Invoice",
             callback_data=f"invoice_{idnumber}"
         )
 
@@ -67,7 +67,7 @@ def get_customer_menu(
 
         navigation.append(
             InlineKeyboardButton(
-                "⬅️ Sebelumnya",
+                "Sebelumnya",
                 callback_data=f"page_{page - 1}"
             )
         )
@@ -76,7 +76,7 @@ def get_customer_menu(
 
         navigation.append(
             InlineKeyboardButton(
-                "Selanjutnya ➡️",
+                "Selanjutnya",
                 callback_data=f"page_{page + 1}"
             )
         )

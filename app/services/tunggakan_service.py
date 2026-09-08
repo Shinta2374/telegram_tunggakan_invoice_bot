@@ -1,7 +1,3 @@
-"""
-Business Logic Informasi Tunggakan.
-"""
-
 from app.services.customer_service import CustomerService
 
 
@@ -67,9 +63,6 @@ class TunggakanService:
                 ):
                     value = "".join(parts)
 
-                else:
-                    value = value
-
             elif "." in value and "," in value:
 
                 value = (
@@ -80,7 +73,10 @@ class TunggakanService:
 
             elif "," in value:
 
-                value = value.replace(",", ".")
+                value = value.replace(
+                    ",",
+                    ".",
+                )
 
             return float(value)
 
@@ -110,6 +106,50 @@ class TunggakanService:
 
         return 0
 
+    def get_customers_with_tunggakan(
+        self,
+        am,
+    ):
+
+        customers = (
+            self.customer_service
+            .get_customers_by_am(am)
+        )
+
+        result = []
+
+        for customer in customers:
+
+            saldo = self._to_number(
+                customer.get(
+                    "SALDO AKHIR CYC"
+                )
+            )
+
+            if saldo > 0:
+
+                customer_copy = (
+                    customer.copy()
+                )
+
+                customer_copy[
+                    "total_tunggakan"
+                ] = saldo
+
+                result.append(
+                    customer_copy
+                )
+
+        result.sort(
+            key=lambda x: x.get(
+                "total_tunggakan",
+                0
+            ),
+            reverse=True,
+        )
+
+        return result
+
     def get_tunggakan(
         self,
         idnumber,
@@ -137,7 +177,9 @@ class TunggakanService:
         )
 
         saldo_akhir_cyc = self._to_number(
-            customer.get("SALDO AKHIR CYC")
+            customer.get(
+                "SALDO AKHIR CYC"
+            )
         )
 
         aging = []
@@ -182,7 +224,11 @@ class TunggakanService:
                 customer.get("idnumber")
                 or idnumber
             ),
-            "saldo_akhir_cyc": saldo_akhir_cyc,
+            "saldo_akhir_cyc": (
+                saldo_akhir_cyc
+            ),
             "aging": aging,
-            "tunggakan_periode": tunggakan_periode,
+            "tunggakan_periode": (
+                tunggakan_periode
+            ),
         }

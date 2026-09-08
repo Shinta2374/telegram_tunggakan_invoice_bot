@@ -11,17 +11,13 @@ class InvoiceService:
             "data"
         ) / "invoice" / "invoice.xlsx"
 
-    # ==========================================================
     # CEK FILE
-    # ==========================================================
 
     def file_exists(self):
 
         return self.file_path.exists()
 
-    # ==========================================================
     # NORMALISASI TEXT
-    # ==========================================================
 
     def _normalize_text(self, value):
 
@@ -34,9 +30,7 @@ class InvoiceService:
             .strip()
         )
 
-    # ==========================================================
     # NORMALISASI CUSTOMER ID
-    # ==========================================================
 
     def _normalize_customer_id(self, value):
 
@@ -90,10 +84,8 @@ class InvoiceService:
             pass
 
         return text
-
-    # ==========================================================
+    
     # KONVERSI ANGKA
-    # ==========================================================
 
     def _to_number(self, value):
 
@@ -193,9 +185,7 @@ class InvoiceService:
 
             return 0
 
-    # ==========================================================
     # NORMALISASI STATUS
-    # ==========================================================
 
     def _normalize_status(self, value):
 
@@ -208,9 +198,7 @@ class InvoiceService:
 
             return "Belum Terkirim"
 
-        # ------------------------------------------------------
         # BELUM TERKIRIM
-        # ------------------------------------------------------
 
         if (
             "no data to display"
@@ -219,10 +207,8 @@ class InvoiceService:
 
             return "Belum Terkirim"
 
-        # ------------------------------------------------------
         # ON PROGRESS
-        # ------------------------------------------------------
-
+ 
         if status in (
             "#n/a",
             "n/a",
@@ -234,9 +220,7 @@ class InvoiceService:
 
             return "On Progress"
 
-        # ------------------------------------------------------
         # INVOICE MANUAL
-        # ------------------------------------------------------
 
         manual_keywords = [
             "inv manual",
@@ -253,10 +237,7 @@ class InvoiceService:
 
                 return "Invoice Manual"
 
-        # ------------------------------------------------------
         # FALLBACK
-        # ------------------------------------------------------
-        #
         # Kalau ada status baru di Excel yang
         # belum kita mapping, tampilkan nilai
         # aslinya agar tidak kehilangan informasi.
@@ -266,10 +247,8 @@ class InvoiceService:
             value
         )
 
-    # ==========================================================
-    # MEMBACA WORKBOOK
-    # ==========================================================
-
+        # MEMBACA WORKBOOK
+   
     def _load_workbook(self):
 
         if not self.file_exists():
@@ -294,9 +273,7 @@ class InvoiceService:
                 f"{e}"
             )
 
-    # ==========================================================
     # MENCARI HEADER
-    # ==========================================================
 
     def _find_header_row(self, worksheet):
 
@@ -309,9 +286,8 @@ class InvoiceService:
             "stts": None,
         }
 
-        # Kita periksa maksimal 20 baris pertama.
-        # Berdasarkan file Anda, header berada
-        # pada baris pertama.
+        # periksa maksimal 20 baris pertama, header berada pada baris pertama.
+        
         max_check = min(
             worksheet.max_row,
             20
@@ -358,9 +334,7 @@ class InvoiceService:
                 elif normalized == "stts":
                     found["stts"] = cell.column
 
-            # Billing Amount di file Anda terbaca
-            # sebagai "lling Amount", sehingga
-            # tidak dijadikan syarat utama.
+            # Billing Amount terbaca sebagai "lling Amount", sehingga
 
             if (
                 "no.jastel" in found
@@ -370,9 +344,8 @@ class InvoiceService:
                 and "total amount" in found
                 and "stts" in found
             ):
-
-                # Billing Amount berada tepat
-                # sebelum PPN pada file Anda.
+                
+                #billing ammount sebelum ppn
                 if "ppn" in found:
 
                     ppn_column = found["ppn"]
@@ -388,9 +361,7 @@ class InvoiceService:
 
         return None
 
-    # ==========================================================
-    # FALLBACK STRUKTUR YANG SUDAH DIVERIFIKASI
-    # ==========================================================
+       # FALLBACK STRUKTUR YANG SUDAH DIVERIFIKASI
 
     def _get_verified_columns(self):
 
@@ -405,9 +376,7 @@ class InvoiceService:
             "stts": 8,
         }
 
-    # ==========================================================
-    # AMBIL DATA INVOICE CUSTOMER
-    # ==========================================================
+        # AMBIL DATA INVOICE CUSTOMER
 
     def get_customer_invoice_data(
         self,
@@ -453,9 +422,7 @@ class InvoiceService:
                     )
                 )
 
-                # --------------------------------------------------
                 # HEADER DITEMUKAN
-                # --------------------------------------------------
 
                 if header_result:
 

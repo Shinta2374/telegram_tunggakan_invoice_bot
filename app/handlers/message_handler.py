@@ -1,7 +1,3 @@
-"""
-Handler untuk pesan teks biasa.
-"""
-
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -38,10 +34,6 @@ async def receive_message(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    """
-    Menangani input teks berdasarkan search_mode.
-    """
-
     if not update.message:
         return
 

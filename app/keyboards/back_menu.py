@@ -8,7 +8,7 @@ def get_back_menu():
 
         [
             InlineKeyboardButton(
-                "⬅️ Kembali ke Menu",
+                "Kembali ke Menu",
                 callback_data="back_menu"
             )
         ]
