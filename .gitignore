@@ -24,3 +24,9 @@ Thumbs.db
 
 # Invoice confidential data
 data/invoice/
+
+# Invoice confidential data
+data/invoice/
+
+# SQLite database
+db/

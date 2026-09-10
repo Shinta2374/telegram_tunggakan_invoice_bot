@@ -1,0 +1,29 @@
+services:
+  telegram-bot:
+    build: .
+    container_name: telegram-chatbot-services
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./db:/app/db
+
+  postgres:
+    image: postgres:18
+    container_name: telegram-chatbot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: telegram_bot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d telegram_bot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

@@ -1,3 +1,5 @@
+import pandas as pd
+
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -20,7 +22,15 @@ def normalize(value):
     if value is None:
         return ""
 
-    return str(value).strip()
+    if pd.isna(value):
+        return ""
+
+    value = str(value).strip()
+
+    if value.lower() in ("nan", "none"):
+        return ""
+
+    return value
 
 
 def normalize_am(value):
@@ -358,7 +368,7 @@ async def show_ams(
         keyboard.append(
             [
                 InlineKeyboardButton(
-                    "Semua AM",
+                    "Semua",
                     callback_data=(
                         f"select_am:{ALL_AM}"
                     ),

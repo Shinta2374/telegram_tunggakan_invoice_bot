@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 from app.services.search_service import SearchService
 from app.services.tunggakan_service import TunggakanService
 from app.services.invoice_service import InvoiceService
+from app.handlers.admin_handler import show_admin_dashboard
 
 from app.handlers.tunggakan_handler import (
     build_tunggakan_text,
@@ -901,6 +902,20 @@ async def command_handler(
                 update,
                 context,
                 keyword,
+            )
+
+            continue
+
+        if command == "/acc":
+
+            print(
+                "[ADMIN] "
+                "Opening admin dashboard..."
+            )
+
+            await show_admin_dashboard(
+                update,
+                context,
             )
 
             continue
