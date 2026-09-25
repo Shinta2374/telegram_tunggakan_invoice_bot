@@ -1,26 +1,28 @@
 from pathlib import Path
+from threading import Lock
 
 from openpyxl import load_workbook
 
 
 class InvoiceService:
 
+    _cache_lock = Lock()
+    _cache_mtime = None
+    _invoice_by_customer = {}
+    _invoice_customers = []
+    _invoice_period = ""
+
     def __init__(self):
-
-        self.file_path = Path(
-            "data"
-        ) / "invoice" / "invoice.xlsx"
-
-    # CEK FILE
+        self.file_path = (
+            Path("data")
+            / "invoice"
+            / "invoice.xlsx"
+        )
 
     def file_exists(self):
-
         return self.file_path.exists()
 
-    # NORMALISASI TEXT
-
     def _normalize_text(self, value):
-
         if value is None:
             return ""
 
@@ -30,10 +32,7 @@ class InvoiceService:
             .strip()
         )
 
-    # NORMALISASI CUSTOMER ID
-
     def _normalize_customer_id(self, value):
-
         if value is None:
             return ""
 
@@ -46,19 +45,12 @@ class InvoiceService:
         if not text:
             return ""
 
-        # Contoh:
-        # 4806453.0 -> 4806453
         if text.endswith(".0"):
-
             try:
-
                 number = float(text)
 
                 if number.is_integer():
-
-                    return str(
-                        int(number)
-                    )
+                    return str(int(number))
 
             except (
                 ValueError,
@@ -66,16 +58,11 @@ class InvoiceService:
             ):
                 pass
 
-        # Jika Excel membaca sebagai float
         try:
-
             number = float(text)
 
             if number.is_integer():
-
-                return str(
-                    int(number)
-                )
+                return str(int(number))
 
         except (
             ValueError,
@@ -84,11 +71,8 @@ class InvoiceService:
             pass
 
         return text
-    
-    # KONVERSI ANGKA
 
     def _to_number(self, value):
-
         if value is None:
             return 0
 
@@ -96,9 +80,7 @@ class InvoiceService:
             return 0
 
         if isinstance(value, (int, float)):
-
             try:
-
                 if value != value:
                     return 0
 
@@ -107,14 +89,11 @@ class InvoiceService:
             except Exception:
                 return 0
 
-        text = self._normalize_text(
-            value
-        )
+        text = self._normalize_text(value)
 
         if not text:
             return 0
 
-        # Hilangkan Rp dan spasi
         text = (
             text
             .replace("Rp", "")
@@ -122,105 +101,60 @@ class InvoiceService:
             .replace(" ", "")
         )
 
-        # Format Indonesia:
-        #
-        # 101.536.997
-        # 11.169.070
-        #
-        # menjadi:
-        #
-        # 101536997
         if "." in text and "," not in text:
-
             parts = text.split(".")
 
             if all(
                 part.isdigit()
                 for part in parts
             ):
-
-                # Jika titik digunakan sebagai
-                # pemisah ribuan
                 if all(
                     len(part) == 3
                     for part in parts[1:]
                 ):
-
                     text = "".join(parts)
 
-        # Format:
-        #
-        # 101.536.997,50
-        #
-        # menjadi:
-        #
-        # 101536997.50
         elif "." in text and "," in text:
-
             text = (
                 text
                 .replace(".", "")
                 .replace(",", ".")
             )
 
-        # Format:
-        #
-        # 101536997,50
-        #
         elif "," in text:
-
-            text = text.replace(
-                ",",
-                "."
-            )
+            text = text.replace(",", ".")
 
         try:
-
             return float(text)
 
         except (
             ValueError,
             TypeError,
         ):
-
             return 0
 
-    # NORMALISASI STATUS
-
     def _normalize_status(self, value):
-
-        status = (
-            self._normalize_text(value)
-            .lower()
+        status = self._normalize_text(
+            value
         )
 
         if not status:
+            return "On Progress"
 
-            return "Belum Terkirim"
-
-        # BELUM TERKIRIM
+        status_lower = status.lower()
 
         if (
             "no data to display"
-            in status
+            in status_lower
         ):
-
-            return "Belum Terkirim"
-
-        # ON PROGRESS
- 
-        if status in (
-            "#n/a",
-            "n/a",
-        ):
-
             return "On Progress"
 
-        if "#n/a" in status:
-
+        if (
+            status_lower == "#n/a"
+            or status_lower == "n/a"
+            or "#n/a" in status_lower
+        ):
             return "On Progress"
-
-        # INVOICE MANUAL
 
         manual_keywords = [
             "inv manual",
@@ -232,51 +166,73 @@ class InvoiceService:
         ]
 
         for keyword in manual_keywords:
-
-            if keyword in status:
-
+            if keyword in status_lower:
                 return "Invoice Manual"
 
-        # FALLBACK
-        # Kalau ada status baru di Excel yang
-        # belum kita mapping, tampilkan nilai
-        # aslinya agar tidak kehilangan informasi.
-        #
+        if (
+            "message has been sent"
+            in status_lower
+            or status_lower == "sent"
+            or "terkirim" in status_lower
+        ):
+            return "Terkirim"
 
-        return self._normalize_text(
-            value
-        )
+        return status
 
-        # MEMBACA WORKBOOK
-   
-    def _load_workbook(self):
+    def _format_period(self, value):
+        text = self._normalize_text(value)
 
-        if not self.file_exists():
+        if not text:
+            return ""
 
-            raise FileNotFoundError(
-                "File invoice tidak ditemukan: "
-                f"{self.file_path}"
+        if text.endswith(".0"):
+            try:
+                number = float(text)
+
+                if number.is_integer():
+                    text = str(int(number))
+
+            except (
+                ValueError,
+                TypeError,
+            ):
+                pass
+
+        if (
+            len(text) == 6
+            and text.isdigit()
+        ):
+            year = text[:4]
+            month = text[4:6]
+
+            month_names = {
+                "01": "Januari",
+                "02": "Februari",
+                "03": "Maret",
+                "04": "April",
+                "05": "Mei",
+                "06": "Juni",
+                "07": "Juli",
+                "08": "Agustus",
+                "09": "September",
+                "10": "Oktober",
+                "11": "November",
+                "12": "Desember",
+            }
+
+            month_name = month_names.get(
+                month
             )
 
-        try:
+            if month_name:
+                return (
+                    f"{month_name} "
+                    f"{year}"
+                )
 
-            return load_workbook(
-                filename=self.file_path,
-                data_only=True,
-                read_only=True,
-            )
-
-        except Exception as e:
-
-            raise ValueError(
-                "File invoice tidak dapat dibaca: "
-                f"{e}"
-            )
-
-    # MENCARI HEADER
+        return text
 
     def _find_header_row(self, worksheet):
-
         required_headers = {
             "no.jastel": None,
             "contr.account detail": None,
@@ -286,22 +242,18 @@ class InvoiceService:
             "stts": None,
         }
 
-        # periksa maksimal 20 baris pertama, header berada pada baris pertama.
-        
         max_check = min(
             worksheet.max_row,
-            20
+            20,
         )
 
         for row_number in range(
             1,
-            max_check + 1
+            max_check + 1,
         ):
-
             found = {}
 
             for cell in worksheet[row_number]:
-
                 value = self._normalize_text(
                     cell.value
                 )
@@ -313,58 +265,57 @@ class InvoiceService:
                 )
 
                 if normalized == "nojastel":
-                    found["no.jastel"] = cell.column
+                    found[
+                        "no.jastel"
+                    ] = cell.column
 
-                elif normalized == "contr.accountdetail":
+                elif (
+                    normalized
+                    == "contr.accountdetail"
+                ):
                     found[
                         "contr.account detail"
                     ] = cell.column
 
                 elif normalized == "bill.pe":
-                    found["bill.pe"] = cell.column
+                    found[
+                        "bill.pe"
+                    ] = cell.column
 
                 elif normalized == "ppn":
-                    found["ppn"] = cell.column
+                    found[
+                        "ppn"
+                    ] = cell.column
 
-                elif normalized == "totalamount":
+                elif (
+                    normalized
+                    == "totalamount"
+                ):
                     found[
                         "total amount"
                     ] = cell.column
 
                 elif normalized == "stts":
-                    found["stts"] = cell.column
-
-            # Billing Amount terbaca sebagai "lling Amount", sehingga
-
-            if (
-                "no.jastel" in found
-                and "contr.account detail" in found
-                and "bill.pe" in found
-                and "ppn" in found
-                and "total amount" in found
-                and "stts" in found
-            ):
-                
-                #billing ammount sebelum ppn
-                if "ppn" in found:
-
-                    ppn_column = found["ppn"]
-
                     found[
-                        "billing amount"
-                    ] = ppn_column - 1
+                        "stts"
+                    ] = cell.column
+
+            if all(
+                key in found
+                for key in required_headers
+            ):
+                found["billing amount"] = (
+                    found["ppn"] - 1
+                )
 
                 return (
                     row_number,
-                    found
+                    found,
                 )
 
         return None
 
-       # FALLBACK STRUKTUR YANG SUDAH DIVERIFIKASI
-
     def _get_verified_columns(self):
-
         return {
             "no": 1,
             "no.jastel": 2,
@@ -376,45 +327,59 @@ class InvoiceService:
             "stts": 8,
         }
 
-        # AMBIL DATA INVOICE CUSTOMER
+    def _get_file_mtime(self):
+        if not self.file_exists():
+            return None
 
-    def get_customer_invoice_data(
-        self,
-        customer_id,
-    ):
+        try:
+            return self.file_path.stat().st_mtime_ns
 
-        target_id = (
-            self._normalize_customer_id(
-                customer_id
+        except OSError:
+            return None
+
+    def _load_workbook(self):
+        if not self.file_exists():
+            raise FileNotFoundError(
+                "File invoice.xlsx "
+                "tidak ditemukan."
             )
+
+        try:
+            return load_workbook(
+                filename=self.file_path,
+                data_only=True,
+                read_only=True,
+            )
+
+        except Exception as error:
+            raise ValueError(
+                "Gagal membaca "
+                "invoice.xlsx: "
+                f"{error}"
+            )
+
+    def _build_cache(self):
+        current_mtime = (
+            self._get_file_mtime()
         )
+
+        if current_mtime is None:
+            return
 
         print(
-            "[INVOICE SEARCH] "
-            f"Target RAW='{customer_id}' "
-            f"Target NORMALIZED='{target_id}'"
+            "[INVOICE CACHE] "
+            "Membaca invoice.xlsx..."
         )
-
-        if not target_id:
-
-            return []
 
         workbook = self._load_workbook()
 
-        invoices = []
+        invoice_by_customer = {}
+        invoice_customers = []
+        customer_map = {}
+        periods = []
 
         try:
-
             for worksheet in workbook.worksheets:
-
-                print(
-                    "======================================"
-                )
-
-                print(
-                    f"[INVOICE SHEET] "
-                    f"{worksheet.title}"
-                )
 
                 header_result = (
                     self._find_header_row(
@@ -422,123 +387,54 @@ class InvoiceService:
                     )
                 )
 
-                # HEADER DITEMUKAN
-
                 if header_result:
-
                     (
                         header_row,
-                        columns
+                        columns,
                     ) = header_result
-
-                    print(
-                        "[INVOICE HEADER] "
-                        f"Row={header_row}"
-                    )
-
-                    no_jastel_col = columns[
-                        "no.jastel"
-                    ]
-
-                    customer_name_col = columns[
-                        "contr.account detail"
-                    ]
-
-                    periode_col = columns[
-                        "bill.pe"
-                    ]
-
-                    billing_col = columns[
-                        "billing amount"
-                    ]
-
-                    ppn_col = columns[
-                        "ppn"
-                    ]
-
-                    total_col = columns[
-                        "total amount"
-                    ]
-
-                    status_col = columns[
-                        "stts"
-                    ]
 
                     start_row = (
                         header_row + 1
                     )
 
-                # --------------------------------------------------
-                # FALLBACK
-                # --------------------------------------------------
-                #
-                # Struktur file sudah diverifikasi:
-                #
-                # A No
-                # B No.Jastel
-                # C Contr.Account Detail
-                # D Bill.Pe
-                # E lling Amount
-                # F PPN
-                # G Total Amount
-                # H Stts
-                #
-                # Jadi kalau header gagal dikenali karena
-                # perubahan whitespace/format Excel,
-                # kita tetap bisa membaca struktur yang
-                # sudah diketahui.
-                #
-
                 else:
-
-                    print(
-                        "[INVOICE HEADER] "
-                        "Header tidak dikenali. "
-                        "Menggunakan struktur kolom "
-                        "invoice terverifikasi."
-                    )
-
                     columns = (
                         self._get_verified_columns()
                     )
 
-                    no_jastel_col = columns[
-                        "no.jastel"
-                    ]
+                    start_row = 2
 
-                    customer_name_col = columns[
-                        "contr.account detail"
-                    ]
+                no_jastel_col = columns[
+                    "no.jastel"
+                ]
 
-                    periode_col = columns[
-                        "bill.pe"
-                    ]
+                customer_name_col = columns[
+                    "contr.account detail"
+                ]
 
-                    billing_col = columns[
-                        "billing amount"
-                    ]
+                periode_col = columns[
+                    "bill.pe"
+                ]
 
-                    ppn_col = columns[
-                        "ppn"
-                    ]
+                billing_amount_col = columns[
+                    "billing amount"
+                ]
 
-                    total_col = columns[
-                        "total amount"
-                    ]
+                ppn_col = columns[
+                    "ppn"
+                ]
 
-                    status_col = columns[
-                        "stts"
-                    ]
+                total_amount_col = columns[
+                    "total amount"
+                ]
 
-                    start_row = 1
-
-                # --------------------------------------------------
-                # BACA BARIS
-                # --------------------------------------------------
+                status_col = columns[
+                    "stts"
+                ]
 
                 for row_number in range(
                     start_row,
-                    worksheet.max_row + 1
+                    worksheet.max_row + 1,
                 ):
 
                     raw_customer_id = (
@@ -548,14 +444,13 @@ class InvoiceService:
                         ).value
                     )
 
-                    normalized_id = (
+                    customer_id = (
                         self._normalize_customer_id(
                             raw_customer_id
                         )
                     )
 
-                    if normalized_id != target_id:
-
+                    if not customer_id:
                         continue
 
                     raw_customer_name = (
@@ -565,6 +460,12 @@ class InvoiceService:
                         ).value
                     )
 
+                    customer_name = (
+                        self._normalize_text(
+                            raw_customer_name
+                        )
+                    )
+
                     raw_periode = (
                         worksheet.cell(
                             row=row_number,
@@ -572,10 +473,21 @@ class InvoiceService:
                         ).value
                     )
 
+                    periode = (
+                        self._normalize_text(
+                            raw_periode
+                        )
+                    )
+
+                    if periode:
+                        periods.append(
+                            periode
+                        )
+
                     raw_billing = (
                         worksheet.cell(
                             row=row_number,
-                            column=billing_col,
+                            column=billing_amount_col,
                         ).value
                     )
 
@@ -589,7 +501,7 @@ class InvoiceService:
                     raw_total = (
                         worksheet.cell(
                             row=row_number,
-                            column=total_col,
+                            column=total_amount_col,
                         ).value
                     )
 
@@ -601,79 +513,259 @@ class InvoiceService:
                     )
 
                     invoice = {
-                        "customer_id": target_id,
-
-                        "pelanggan": (
-                            self._normalize_text(
-                                raw_customer_name
-                            )
-                        ),
-
-                        "periode": (
-                            self._normalize_text(
-                                raw_periode
-                            )
-                        ),
-
+                        "customer_id": customer_id,
+                        "pelanggan": customer_name,
+                        "customer_name": customer_name,
+                        "periode": periode,
                         "billing_amount": (
                             self._to_number(
                                 raw_billing
                             )
                         ),
-
                         "ppn": (
                             self._to_number(
                                 raw_ppn
                             )
                         ),
-
                         "total_amount": (
                             self._to_number(
                                 raw_total
                             )
                         ),
-
                         "status": (
                             self._normalize_status(
                                 raw_status
                             )
                         ),
-
                         "status_raw": (
                             self._normalize_text(
                                 raw_status
                             )
                         ),
-
                         "sheet": worksheet.title,
-
                         "row": row_number,
                     }
 
-                    invoices.append(
-                        invoice
+                    if customer_id not in (
+                        invoice_by_customer
+                    ):
+                        invoice_by_customer[
+                            customer_id
+                        ] = []
+
+                    invoice_by_customer[
+                        customer_id
+                    ].append(invoice)
+
+                    if customer_id not in customer_map:
+                        customer_map[
+                            customer_id
+                        ] = {
+                            "customer_id": customer_id,
+                            "customer_name": (
+                                customer_name
+                                or "-"
+                            ),
+                            "pelanggan": (
+                                customer_name
+                                or "-"
+                            ),
+                        }
+
+            invoice_customers = list(
+                customer_map.values()
+            )
+
+            invoice_customers.sort(
+                key=lambda item: (
+                    item.get(
+                        "customer_name",
+                        "",
+                    ).lower()
+                )
+            )
+
+            invoice_period = ""
+
+            if periods:
+                period_counter = {}
+
+                for period in periods:
+                    normalized_period = (
+                        self._normalize_text(
+                            period
+                        )
                     )
 
-                    print(
-                        "[INVOICE MATCH] "
-                        f"Row={row_number} "
-                        f"ID={normalized_id} "
-                        f"Periode={invoice['periode']} "
-                        f"Status={invoice['status']}"
+                    if not normalized_period:
+                        continue
+
+                    period_counter[
+                        normalized_period
+                    ] = (
+                        period_counter.get(
+                            normalized_period,
+                            0,
+                        )
+                        + 1
                     )
+
+                if period_counter:
+                    invoice_period = max(
+                        period_counter,
+                        key=period_counter.get,
+                    )
+
+            InvoiceService._invoice_by_customer = (
+                invoice_by_customer
+            )
+
+            InvoiceService._invoice_customers = (
+                invoice_customers
+            )
+
+            InvoiceService._invoice_period = (
+                invoice_period
+            )
+
+            InvoiceService._cache_mtime = (
+                current_mtime
+            )
+
+            print(
+                "[INVOICE CACHE] "
+                f"Cache berhasil dibuat. "
+                f"{len(invoice_customers)} "
+                "customer, "
+                f"{sum(len(items) for items in invoice_by_customer.values())} "
+                "invoice."
+            )
 
         finally:
-
             workbook.close()
 
-        print(
-            "======================================"
+    def _ensure_cache(self):
+        current_mtime = (
+            self._get_file_mtime()
         )
 
-        print(
-            "[INVOICE RESULT] "
-            f"Target ID = {target_id} "
-            f"Jumlah invoice = {len(invoices)}"
+        if current_mtime is None:
+            return
+
+        if (
+            InvoiceService._cache_mtime
+            == current_mtime
+            and InvoiceService._invoice_customers
+            is not None
+        ):
+            return
+
+        with InvoiceService._cache_lock:
+
+            current_mtime = (
+                self._get_file_mtime()
+            )
+
+            if current_mtime is None:
+                return
+
+            if (
+                InvoiceService._cache_mtime
+                == current_mtime
+            ):
+                return
+
+            self._build_cache()
+
+    def get_invoice_customers(self):
+        self._ensure_cache()
+
+        return [
+            dict(customer)
+            for customer in (
+                InvoiceService._invoice_customers
+            )
+        ]
+
+    def get_customer_invoice_data(
+        self,
+        customer_id,
+    ):
+        self._ensure_cache()
+
+        target_id = (
+            self._normalize_customer_id(
+                customer_id
+            )
         )
 
-        return invoices
+        if not target_id:
+            return []
+
+        invoices = (
+            InvoiceService
+            ._invoice_by_customer
+            .get(
+                target_id,
+                [],
+            )
+        )
+
+        return [
+            dict(invoice)
+            for invoice in invoices
+        ]
+
+    def get_invoice_customer(
+        self,
+        customer_id,
+    ):
+        self._ensure_cache()
+
+        target_id = (
+            self._normalize_customer_id(
+                customer_id
+            )
+        )
+
+        if not target_id:
+            return None
+
+        for customer in (
+            InvoiceService
+            ._invoice_customers
+        ):
+            if (
+                customer.get(
+                    "customer_id"
+                )
+                == target_id
+            ):
+                return dict(customer)
+
+        return None
+
+    def get_invoice_period(self):
+        self._ensure_cache()
+
+        if not (
+            InvoiceService
+            ._invoice_period
+        ):
+            return ""
+
+        return self._format_period(
+            InvoiceService._invoice_period
+        )
+
+    def clear_cache(self):
+        with InvoiceService._cache_lock:
+            InvoiceService._cache_mtime = None
+            InvoiceService._invoice_by_customer = {}
+            InvoiceService._invoice_customers = []
+            InvoiceService._invoice_period = ""
+
+            print(
+                "[INVOICE CACHE] "
+                "Cache dibersihkan."
+            )

@@ -29,7 +29,7 @@ async def start(
 
         await update.message.reply_text(
             "Selamat datang di "
-            "Telegram Chatbot Services."
+            "NETA Chatbot Services."
         )
 
         await show_ams(

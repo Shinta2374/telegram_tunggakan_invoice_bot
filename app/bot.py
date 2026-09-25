@@ -13,6 +13,7 @@ from telegram.ext import (
 
 from app.config.settings import settings
 from app.services.auth_service import AuthService
+from app.services.invoice_service import InvoiceService
 
 from app.handlers.auth_handler import auth_start_handler
 from app.handlers.message_handler import receive_message
@@ -22,16 +23,30 @@ from app.handlers.command_handler import command_handler
 
 async def setup_commands(application):
     user_commands = [
-        BotCommand("start", "Membuka Menu Utama"),
-        BotCommand("tgkn", "Menampilkan Tunggakan"),
-        BotCommand("inv", "Menampilkan Invoice"),
+        BotCommand(
+            "start",
+            "Membuka Menu Utama",
+        ),
+        BotCommand(
+            "inv",
+            "Menampilkan Invoice",
+        ),
         BotCommand(
             "cyc",
-            "Menampilkan Pelanggan dengan Tunggakan",
+            "Menampilkan Saldo CYC",
         ),
-        BotCommand("am", "Daftar AM"),
-        BotCommand("cust", "Cari Customer"),
-        BotCommand("help", "Menampilkan Panduan"),
+        BotCommand(
+            "cr",
+            "Menampilkan Saldo CR",
+        ),
+        BotCommand(
+            "am",
+            "Daftar AM",
+        ),
+        BotCommand(
+            "help",
+            "Menampilkan Panduan",
+        ),
     ]
 
     admin_commands = user_commands + [
@@ -41,11 +56,13 @@ async def setup_commands(application):
         ),
     ]
 
+    # Command untuk user biasa
     await application.bot.set_my_commands(
         user_commands,
         scope=BotCommandScopeDefault(),
     )
 
+    # Command tambahan khusus admin
     for admin_id in settings.ADMIN_IDS:
         try:
             await application.bot.set_my_commands(
@@ -78,6 +95,7 @@ class TelegramBot:
         )
 
         self.initialize_database()
+        self.initialize_invoice_cache()
         self.register_handlers()
 
     def initialize_database(self):
@@ -88,8 +106,32 @@ class TelegramBot:
             "Database initialization berhasil."
         )
 
+    def initialize_invoice_cache(self):
+        try:
+            invoice_service = InvoiceService()
+
+            print(
+                "[INVOICE CACHE] Memulai preload invoice..."
+            )
+
+            invoice_customers = (
+                invoice_service.get_invoice_customers()
+            )
+
+            print(
+                "[INVOICE CACHE] Preload berhasil. "
+                f"{len(invoice_customers)} customer invoice."
+            )
+
+        except Exception as error:
+            print(
+                "[INVOICE CACHE ERROR] "
+                f"Gagal melakukan preload: {error}"
+            )
+
     def register_handlers(self):
 
+        # /start
         self.application.add_handler(
             CommandHandler(
                 "start",
@@ -97,14 +139,14 @@ class TelegramBot:
             )
         )
 
+        # Command utama
         self.application.add_handler(
             CommandHandler(
                 [
-                    "tgkn",
                     "inv",
                     "cyc",
+                    "cr",
                     "am",
-                    "cust",
                     "help",
                     "acc",
                 ],
@@ -112,12 +154,14 @@ class TelegramBot:
             )
         )
 
+        # Callback dari inline keyboard
         self.application.add_handler(
             CallbackQueryHandler(
                 callback_handler,
             )
         )
 
+        # Pesan teks biasa
         self.application.add_handler(
             MessageHandler(
                 filters.TEXT & ~filters.COMMAND,
@@ -132,7 +176,7 @@ class TelegramBot:
 
         print(
             "Registered commands: "
-            "/start /tgkn /inv /cyc /am /cust /help /acc"
+            "/start /inv /cyc /cr /am /help /acc"
         )
 
         print()

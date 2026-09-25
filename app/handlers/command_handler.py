@@ -10,24 +10,171 @@ from telegram.ext import ContextTypes
 from app.services.search_service import SearchService
 from app.services.tunggakan_service import TunggakanService
 from app.services.invoice_service import InvoiceService
-from app.handlers.admin_handler import show_admin_dashboard
+
+from app.handlers.admin_handler import (
+    show_admin_dashboard,
+)
 
 from app.handlers.tunggakan_handler import (
-    build_tunggakan_text,
-    format_rupiah,
+    build_saldo_cyc_text,
+    build_saldo_cr_text,
 )
 
 from app.handlers.invoice_handler import (
     build_invoice_text,
-    get_customer_by_id,
-    get_customer_name,
-    get_invoice_period,
 )
 
 
 search_service = SearchService()
 tunggakan_service = TunggakanService()
 invoice_service = InvoiceService()
+
+
+# =========================================================
+# HELPER
+# =========================================================
+
+MONTH_NAMES = {
+    "01": "Januari",
+    "02": "Februari",
+    "03": "Maret",
+    "04": "April",
+    "05": "Mei",
+    "06": "Juni",
+    "07": "Juli",
+    "08": "Agustus",
+    "09": "September",
+    "10": "Oktober",
+    "11": "November",
+    "12": "Desember",
+}
+
+
+def normalize(value):
+    if value is None:
+        return ""
+
+    return str(value).strip()
+
+
+def normalize_id(value):
+    value = normalize(value)
+
+    if not value:
+        return ""
+
+    if value.endswith(".0"):
+        try:
+            number = float(value)
+
+            if number.is_integer():
+                return str(int(number))
+
+        except (
+            ValueError,
+            TypeError,
+        ):
+            pass
+
+    try:
+        number = float(value)
+
+        if number.is_integer():
+            return str(int(number))
+
+    except (
+        ValueError,
+        TypeError,
+    ):
+        pass
+
+    return value
+
+
+def format_periode(value):
+    periode = normalize(value)
+
+    if not periode:
+        return "-"
+
+    periode = periode.replace(
+        ".0",
+        "",
+    )
+
+    if (
+        len(periode) == 6
+        and periode.isdigit()
+    ):
+        year = periode[:4]
+        month = periode[4:6]
+
+        month_name = MONTH_NAMES.get(
+            month
+        )
+
+        if month_name:
+            return (
+                f"{month_name} {year}"
+            )
+
+    return periode
+
+
+def get_customer_name_from_result(
+    result,
+):
+    return (
+        normalize(
+            result.get(
+                "customer_name"
+            )
+        )
+        or normalize(
+            result.get(
+                "PELANGGAN"
+            )
+        )
+        or normalize(
+            result.get(
+                "pelanggan"
+            )
+        )
+        or "-"
+    )
+
+
+def get_invoice_period(
+    context,
+    invoices=None,
+):
+    period = context.user_data.get(
+        "invoice_period"
+    )
+
+    if period:
+        return format_periode(
+            period
+        )
+
+    if invoices:
+        first_invoice = invoices[0]
+
+        period = (
+            first_invoice.get(
+                "periode"
+            )
+            or first_invoice.get(
+                "bill_pe"
+            )
+        )
+
+        if period:
+            return format_periode(
+                period
+            )
+
+    return "-"
 
 
 def build_customer_search_text(
@@ -57,12 +204,16 @@ def build_customer_keyboard(
 
     for result in results:
         customer_id = (
-            result.get("customer_id")
+            result.get(
+                "customer_id"
+            )
             or "-"
         )
 
         customer_name = (
-            result.get("customer_name")
+            result.get(
+                "customer_name"
+            )
             or "-"
         )
 
@@ -98,152 +249,9 @@ def build_customer_keyboard(
     )
 
 
-def build_cyc_text(
-    result,
-    customer_id,
-):
-    if not result:
-        return (
-            "INFORMASI SALDO CYC\n\n"
-            f"ID: {customer_id}\n\n"
-            "Data CYC tidak ditemukan."
-        )
-
-    pelanggan = (
-        result.get("PELANGGAN")
-        or result.get("pelanggan")
-        or "-"
-    )
-
-    idnumber = (
-        result.get("idnumber")
-        or customer_id
-    )
-
-    am = (
-        result.get("am")
-        or "-"
-    )
-
-    saldo = result.get(
-        "saldo_akhir_cyc",
-        0,
-    )
-
-    return (
-        "INFORMASI SALDO CYC\n\n"
-        f"{pelanggan} ({idnumber})\n"
-        f"{am}\n\n"
-        f"Saldo Akhir CYC: "
-        f"{format_rupiah(saldo)}"
-    )
-
-
-async def command_tunggakan(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    keyword,
-):
-    if not update.message:
-        return
-
-    if not keyword:
-        context.user_data[
-            "active_menu"
-        ] = "tunggakan"
-
-        context.user_data[
-            "customer_page"
-        ] = 0
-
-        context.user_data[
-            "selected_customer_id"
-        ] = None
-
-        from app.handlers.customer_handler import (
-            show_customers,
-        )
-
-        await show_customers(
-            update,
-            context,
-            page=0,
-        )
-
-        return
-
-    results = (
-        search_service
-        .search_customers(
-            keyword,
-            max_results=10,
-        )
-    )
-
-    if not results:
-        await update.message.reply_text(
-            build_customer_search_text(
-                keyword,
-                results,
-            )
-        )
-
-        return
-
-    if len(results) == 1:
-        selected = results[0]
-
-        customer_id = (
-            selected["customer_id"]
-        )
-
-        context.user_data[
-            "selected_customer_id"
-        ] = customer_id
-
-        context.user_data[
-            "active_menu"
-        ] = "tunggakan"
-
-        result = (
-            tunggakan_service
-            .get_tunggakan(
-                customer_id
-            )
-        )
-
-        if not result:
-            await update.message.reply_text(
-                "Data tunggakan tidak ditemukan."
-            )
-
-            return
-
-        text = build_tunggakan_text(
-            result
-        )
-
-        await update.message.reply_text(
-            text=text
-        )
-
-        return
-
-    text = build_customer_search_text(
-        keyword,
-        results,
-    )
-
-    markup = build_customer_keyboard(
-        results,
-        "tunggakan",
-    )
-
-    await update.message.reply_text(
-        text=text,
-        reply_markup=markup,
-    )
-
+# =========================================================
+# /INV
+# =========================================================
 
 async def command_invoice(
     update: Update,
@@ -253,6 +261,7 @@ async def command_invoice(
     if not update.message:
         return
 
+    # /inv tanpa keyword
     if not keyword:
         context.user_data[
             "active_menu"
@@ -278,6 +287,7 @@ async def command_invoice(
 
         return
 
+    # /inv <customer>
     results = (
         search_service
         .search_customers(
@@ -296,11 +306,26 @@ async def command_invoice(
 
         return
 
+    # Satu customer
     if len(results) == 1:
         selected = results[0]
 
         customer_id = (
-            selected["customer_id"]
+            selected.get(
+                "customer_id"
+            )
+        )
+
+        if not customer_id:
+            await update.message.reply_text(
+                "Customer tidak memiliki ID."
+            )
+            return
+
+        customer_name = (
+            get_customer_name_from_result(
+                selected
+            )
         )
 
         context.user_data[
@@ -310,24 +335,6 @@ async def command_invoice(
         context.user_data[
             "active_menu"
         ] = "invoice"
-
-        customer = get_customer_by_id(
-            customer_id
-        )
-
-        if customer:
-            customer_name = (
-                get_customer_name(
-                    customer
-                )
-            )
-        else:
-            customer_name = (
-                selected.get(
-                    "customer_name"
-                )
-                or "-"
-            )
 
         invoices = (
             invoice_service
@@ -357,6 +364,7 @@ async def command_invoice(
 
         return
 
+    # Banyak customer
     text = build_customer_search_text(
         keyword,
         results,
@@ -373,6 +381,10 @@ async def command_invoice(
     )
 
 
+# =========================================================
+# /CYC
+# =========================================================
+
 async def command_cyc(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -381,6 +393,7 @@ async def command_cyc(
     if not update.message:
         return
 
+    # /cyc tanpa keyword
     if not keyword:
         context.user_data[
             "active_menu"
@@ -406,6 +419,7 @@ async def command_cyc(
 
         return
 
+    # /cyc <customer>
     results = (
         search_service
         .search_customers(
@@ -424,12 +438,21 @@ async def command_cyc(
 
         return
 
+    # Satu customer
     if len(results) == 1:
         selected = results[0]
 
         customer_id = (
-            selected["customer_id"]
+            selected.get(
+                "customer_id"
+            )
         )
+
+        if not customer_id:
+            await update.message.reply_text(
+                "Customer tidak memiliki ID."
+            )
+            return
 
         context.user_data[
             "selected_customer_id"
@@ -441,14 +464,13 @@ async def command_cyc(
 
         result = (
             tunggakan_service
-            .get_tunggakan(
+            .get_saldo_cyc(
                 customer_id
             )
         )
 
-        text = build_cyc_text(
-            result,
-            customer_id,
+        text = build_saldo_cyc_text(
+            result
         )
 
         await update.message.reply_text(
@@ -457,6 +479,7 @@ async def command_cyc(
 
         return
 
+    # Banyak customer
     text = build_customer_search_text(
         keyword,
         results,
@@ -472,6 +495,125 @@ async def command_cyc(
         reply_markup=markup,
     )
 
+
+# =========================================================
+# /CR
+# =========================================================
+
+async def command_cr(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    keyword,
+):
+    if not update.message:
+        return
+
+    # /cr tanpa keyword
+    if not keyword:
+        context.user_data[
+            "active_menu"
+        ] = "saldo_cr"
+
+        context.user_data[
+            "customer_page"
+        ] = 0
+
+        context.user_data[
+            "selected_customer_id"
+        ] = None
+
+        from app.handlers.customer_handler import (
+            show_customers,
+        )
+
+        await show_customers(
+            update,
+            context,
+            page=0,
+        )
+
+        return
+
+    # /cr <customer>
+    results = (
+        search_service
+        .search_customers(
+            keyword,
+            max_results=10,
+        )
+    )
+
+    if not results:
+        await update.message.reply_text(
+            build_customer_search_text(
+                keyword,
+                results,
+            )
+        )
+
+        return
+
+    # Satu customer
+    if len(results) == 1:
+        selected = results[0]
+
+        customer_id = (
+            selected.get(
+                "customer_id"
+            )
+        )
+
+        if not customer_id:
+            await update.message.reply_text(
+                "Customer tidak memiliki ID."
+            )
+            return
+
+        context.user_data[
+            "selected_customer_id"
+        ] = customer_id
+
+        context.user_data[
+            "active_menu"
+        ] = "saldo_cr"
+
+        result = (
+            tunggakan_service
+            .get_saldo_cr(
+                customer_id
+            )
+        )
+
+        text = build_saldo_cr_text(
+            result
+        )
+
+        await update.message.reply_text(
+            text=text
+        )
+
+        return
+
+    # Banyak customer
+    text = build_customer_search_text(
+        keyword,
+        results,
+    )
+
+    markup = build_customer_keyboard(
+        results,
+        "saldo_cr",
+    )
+
+    await update.message.reply_text(
+        text=text,
+        reply_markup=markup,
+    )
+
+
+# =========================================================
+# /AM
+# =========================================================
 
 async def command_am(
     update: Update,
@@ -489,9 +631,12 @@ async def command_am(
 
     normalized_keyword = (
         search_service
-        .normalize_text(keyword)
+        .normalize_text(
+            keyword
+        )
     )
 
+    # /am semua
     if normalized_keyword in (
         "semua",
         "semua am",
@@ -520,6 +665,7 @@ async def command_am(
 
         return "__ALL__"
 
+    # /am
     if not keyword:
         await show_ams(
             update,
@@ -529,6 +675,7 @@ async def command_am(
 
         return None
 
+    # /am <nama AM>
     results = (
         search_service
         .search_ams(
@@ -546,8 +693,11 @@ async def command_am(
 
         return None
 
+    # Satu AM
     if len(results) == 1:
-        am_name = results[0]["am"]
+        am_name = results[0].get(
+            "am"
+        )
 
         context.user_data[
             "current_am"
@@ -573,6 +723,7 @@ async def command_am(
 
         return am_name
 
+    # Banyak AM
     text = (
         "HASIL PENCARIAN AM\n\n"
         f"Ditemukan {len(results)} AM.\n"
@@ -582,7 +733,12 @@ async def command_am(
     keyboard = []
 
     for result in results:
-        am = result["am"]
+        am = result.get(
+            "am"
+        )
+
+        if not am:
+            continue
 
         keyboard.append(
             [
@@ -614,97 +770,9 @@ async def command_am(
     return None
 
 
-async def command_customer(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    keyword,
-):
-    if not update.message:
-        return
-
-    if not keyword:
-        await update.message.reply_text(
-            "CARI CUSTOMER\n\n"
-            "Gunakan format:\n\n"
-            "/cust <nama customer>\n"
-            "/cust <ID pelanggan>\n\n"
-            "Contoh:\n"
-            "/cust palmyra\n"
-            "/cust 5003595"
-        )
-
-        return
-
-    results = (
-        search_service
-        .search_customers(
-            keyword,
-            max_results=10,
-        )
-    )
-
-    if not results:
-        await update.message.reply_text(
-            build_customer_search_text(
-                keyword,
-                results,
-            )
-        )
-
-        return
-
-    if len(results) == 1:
-        result = results[0]
-
-        customer_name = (
-            result.get(
-                "customer_name"
-            )
-            or "-"
-        )
-
-        customer_id = (
-            result.get(
-                "customer_id"
-            )
-            or "-"
-        )
-
-        am = (
-            result.get(
-                "am"
-            )
-            or "-"
-        )
-
-        text = (
-            "CUSTOMER DITEMUKAN\n\n"
-            f"{customer_name} "
-            f"({customer_id})\n"
-            f"{am}"
-        )
-
-        await update.message.reply_text(
-            text=text
-        )
-
-        return
-
-    text = build_customer_search_text(
-        keyword,
-        results,
-    )
-
-    markup = build_customer_keyboard(
-        results,
-        "customer",
-    )
-
-    await update.message.reply_text(
-        text=text,
-        reply_markup=markup,
-    )
-
+# =========================================================
+# /HELP
+# =========================================================
 
 async def command_help(
     update: Update,
@@ -719,15 +787,6 @@ async def command_help(
         "/start\n"
         "Membuka menu utama.\n\n"
 
-        "/tgkn\n"
-        "Melihat daftar tunggakan.\n\n"
-
-        "/tgkn <customer>\n"
-        "Mencari tunggakan customer.\n\n"
-
-        "/tgkn <ID>\n"
-        "Mencari tunggakan berdasarkan ID.\n\n"
-
         "/inv\n"
         "Melihat daftar invoice.\n\n"
 
@@ -738,13 +797,22 @@ async def command_help(
         "Mencari invoice berdasarkan ID.\n\n"
 
         "/cyc\n"
-        "Melihat saldo CYC.\n\n"
+        "Melihat daftar Saldo CYC.\n\n"
 
         "/cyc <customer>\n"
-        "Mencari saldo CYC customer.\n\n"
+        "Mencari Saldo CYC customer.\n\n"
 
         "/cyc <ID>\n"
-        "Mencari saldo CYC berdasarkan ID.\n\n"
+        "Mencari Saldo CYC berdasarkan ID.\n\n"
+
+        "/cr\n"
+        "Melihat daftar Saldo CR.\n\n"
+
+        "/cr <customer>\n"
+        "Mencari Saldo CR customer.\n\n"
+
+        "/cr <ID>\n"
+        "Mencari Saldo CR berdasarkan ID.\n\n"
 
         "/am\n"
         "Melihat daftar AM.\n\n"
@@ -753,22 +821,17 @@ async def command_help(
         "Melihat seluruh daftar AM.\n\n"
 
         "/am <nama AM>\n"
-        "Mencari AM.\n\n"
-
-        "/cust <customer>\n"
-        "Mencari customer.\n\n"
-
-        "/cust <ID>\n"
-        "Mencari customer berdasarkan ID.\n\n"
-
-        "/help\n"
-        "Menampilkan bantuan command."
+        "Mencari AM."
     )
 
     await update.message.reply_text(
         text
     )
 
+
+# =========================================================
+# MAIN COMMAND ROUTER
+# =========================================================
 
 async def command_handler(
     update: Update,
@@ -787,7 +850,8 @@ async def command_handler(
 
     pattern = (
         r"(/[A-Za-z0-9_]+(?:@[A-Za-z0-9_]+)?)"
-        r"(.*?)(?=\s+/[A-Za-z0-9_]+(?:@[A-Za-z0-9_]+)?(?:\s|$)|$)"
+        r"(.*?)(?=\s+/[A-Za-z0-9_]+"
+        r"(?:@[A-Za-z0-9_]+)?(?:\s|$)|$)"
     )
 
     matches = re.findall(
@@ -817,10 +881,16 @@ async def command_handler(
             }
         )
 
-    for index, item in enumerate(commands):
+    for index, item in enumerate(
+        commands
+    ):
+        command = item[
+            "command"
+        ]
 
-        command = item["command"]
-        keyword = item["keyword"]
+        keyword = item[
+            "keyword"
+        ]
 
         print(
             "[COMMAND] "
@@ -828,8 +898,35 @@ async def command_handler(
             f"keyword={keyword}"
         )
 
-        if command == "/am":
+        # /inv
+        if command == "/inv":
+            await command_invoice(
+                update,
+                context,
+                keyword,
+            )
+            continue
 
+        # /cyc
+        if command == "/cyc":
+            await command_cyc(
+                update,
+                context,
+                keyword,
+            )
+            continue
+
+        # /cr
+        if command == "/cr":
+            await command_cr(
+                update,
+                context,
+                keyword,
+            )
+            continue
+
+        # /am
+        if command == "/am":
             has_next_command = (
                 index + 1
                 < len(commands)
@@ -840,23 +937,22 @@ async def command_handler(
             if has_next_command:
                 next_command = commands[
                     index + 1
-                ]["command"]
+                ][
+                    "command"
+                ]
 
             if next_command in (
-                "/tgkn",
                 "/inv",
                 "/cyc",
+                "/cr",
             ):
-
                 await command_am(
                     update,
                     context,
                     keyword,
                     show_menu=False,
                 )
-
             else:
-
                 await command_am(
                     update,
                     context,
@@ -866,48 +962,8 @@ async def command_handler(
 
             continue
 
-        if command == "/tgkn":
-
-            await command_tunggakan(
-                update,
-                context,
-                keyword,
-            )
-
-            continue
-
-        if command == "/inv":
-
-            await command_invoice(
-                update,
-                context,
-                keyword,
-            )
-
-            continue
-
-        if command == "/cyc":
-
-            await command_cyc(
-                update,
-                context,
-                keyword,
-            )
-
-            continue
-
-        if command == "/cust":
-
-            await command_customer(
-                update,
-                context,
-                keyword,
-            )
-
-            continue
-
+        # /acc
         if command == "/acc":
-
             print(
                 "[ADMIN] "
                 "Opening admin dashboard..."
@@ -920,11 +976,16 @@ async def command_handler(
 
             continue
 
+        # /help
         if command == "/help":
-
             await command_help(
                 update,
                 context,
             )
 
             continue
+
+        print(
+            "[COMMAND] "
+            f"Command tidak dikenali: {command}"
+        )

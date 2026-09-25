@@ -5,11 +5,9 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from app.services.invoice_service import InvoiceService
-from app.services.customer_service import CustomerService
 
 
 invoice_service = InvoiceService()
-customer_service = CustomerService()
 
 
 MONTH_NAMES = {
@@ -40,19 +38,6 @@ def normalize_id(value):
 
     if not value:
         return ""
-
-    if value.endswith(".0"):
-        try:
-            number = float(value)
-
-            if number.is_integer():
-                return str(int(number))
-
-        except (
-            ValueError,
-            TypeError,
-        ):
-            pass
 
     try:
         number = float(value)
@@ -100,13 +85,22 @@ def format_periode(value):
     if not periode:
         return "-"
 
-    periode = periode.replace(
-        ".0",
-        "",
-    )
+    try:
+        number = float(periode)
 
-    if len(periode) == 6 and periode.isdigit():
+        if number.is_integer():
+            periode = str(int(number))
 
+    except (
+        ValueError,
+        TypeError,
+    ):
+        pass
+
+    if (
+        len(periode) == 6
+        and periode.isdigit()
+    ):
         year = periode[:4]
         month = periode[4:6]
 
@@ -115,7 +109,10 @@ def format_periode(value):
         )
 
         if month_name:
-            return f"{month_name} {year}"
+            return (
+                f"{month_name} "
+                f"{year}"
+            )
 
     return periode
 
@@ -132,17 +129,25 @@ def normalize_status(value):
     status_lower = status.lower()
 
     if (
-        "sent manual" in status_lower
-        or "inv manual" in status_lower
-        or "invoice manual" in status_lower
-    ):
-        return "Invoice manual"
-
-    if (
-        "#n/a" in status_lower
-        or "no data to display" in status_lower
+        "no data to display"
+        in status_lower
+        or "#n/a" in status_lower
+        or status_lower == "n/a"
     ):
         return "On Progress"
+
+    manual_keywords = [
+        "inv manual",
+        "invoice manual",
+        "sent tghn manual",
+        "sent manual",
+        "manual via ideas",
+        "klik sent manual",
+    ]
+
+    for keyword in manual_keywords:
+        if keyword in status_lower:
+            return "Invoice Manual"
 
     if (
         "message has been sent"
@@ -152,74 +157,33 @@ def normalize_status(value):
     ):
         return "Terkirim"
 
-    return "On Progress"
+    return normalize_text(value)
 
 
-def get_customer_name(customer):
-    return (
-        normalize(customer.get("PELANGGAN"))
-        or normalize(customer.get("pelanggan"))
-        or normalize(customer.get("nama"))
-        or normalize(customer.get("CUSTOMER"))
-        or normalize(customer.get("pcTCYC"))
-        or normalize(
-            customer.get(
-                "contr_account_detail"
-            )
-        )
-        or "-"
-    )
-
-
-def get_customer_id(customer):
-    fields = (
-        "idnumber",
-        "customer_id",
-        "ID",
-        "id",
-        "no_jastel",
-    )
-
-    for field in fields:
-
-        value = normalize_id(
-            customer.get(field)
-        )
-
-        if value:
-            return value
-
-    return "-"
-
-
-def get_customer_by_id(customer_id):
-    customers = (
-        customer_service
-        .get_all_customers()
-    )
-
+def get_invoice_customer(customer_id):
     target_id = normalize_id(
         customer_id
     )
 
-    for customer in customers:
+    if not target_id:
+        return None
 
-        current_id = get_customer_id(
-            customer
+    return (
+        invoice_service
+        .get_invoice_customer(
+            target_id
         )
-
-        if current_id == target_id:
-            return customer
-
-    return None
+    )
 
 
 def get_invoice_period(
-    context: ContextTypes.DEFAULT_TYPE,
+    context,
     invoices=None,
 ):
-    period = context.user_data.get(
-        "invoice_period"
+    period = (
+        context.user_data.get(
+            "invoice_period"
+        )
     )
 
     if period:
@@ -227,13 +191,33 @@ def get_invoice_period(
             period
         )
 
-    if invoices:
+    try:
+        period = (
+            invoice_service
+            .get_invoice_period()
+        )
 
+        if period:
+            return format_periode(
+                period
+            )
+
+    except Exception as error:
+        print(
+            "[INVOICE PERIOD ERROR] "
+            f"{error}"
+        )
+
+    if invoices:
         first_invoice = invoices[0]
 
         period = (
-            first_invoice.get("periode")
-            or first_invoice.get("bill_pe")
+            first_invoice.get(
+                "periode"
+            )
+            or first_invoice.get(
+                "bill_pe"
+            )
         )
 
         if period:
@@ -251,14 +235,12 @@ def build_invoice_text(
     period,
 ):
     if period != "-":
-
         header = (
             "INFORMASI INVOICE BULAN "
             f"{period.upper()}"
         )
 
     else:
-
         header = (
             "INFORMASI INVOICE BULAN"
         )
@@ -267,35 +249,39 @@ def build_invoice_text(
         customer_name
     )
 
+    customer_id = normalize_id(
+        customer_id
+    )
+
     text = (
         f"{header}\n\n"
-        f"{customer_name} ({customer_id})\n"
+        f"{customer_name} "
+        f"({customer_id})\n"
     )
 
     if not invoices:
-
         text += (
-            "\n"
-            "Tidak ada invoice yang "
+            "\nTidak ada invoice yang "
             "tersedia untuk periode ini."
         )
 
         return text
 
     text += (
-        "\n"
-        f"Total Invoice: {len(invoices)}\n"
+        f"\nTotal Invoice: "
+        f"{len(invoices)}\n"
     )
 
     for index, invoice in enumerate(
         invoices,
         start=1,
     ):
-
-        billing_amount = format_rupiah(
-            invoice.get(
-                "billing_amount",
-                0,
+        billing_amount = (
+            format_rupiah(
+                invoice.get(
+                    "billing_amount",
+                    0,
+                )
             )
         )
 
@@ -314,18 +300,25 @@ def build_invoice_text(
         )
 
         status = normalize_status(
-            invoice.get("status")
-            or invoice.get("stts")
+            invoice.get(
+                "status"
+            )
+            or invoice.get(
+                "stts"
+            )
         )
 
         text += (
-            "\n"
-            "────────────────────────────\n\n"
+            "\n──────────────────────────\n\n"
             f"INVOICE {index}\n\n"
-            f"Billing Amount  : {billing_amount}\n"
-            f"PPN             : {ppn}\n"
-            f"Total Amount    : {total_amount}\n"
-            f"Status          : {status}\n"
+            f"Billing Amount  : "
+            f"{billing_amount}\n"
+            f"PPN             : "
+            f"{ppn}\n"
+            f"Total Amount    : "
+            f"{total_amount}\n"
+            f"Status          : "
+            f"{status}\n"
         )
 
     return text
@@ -342,67 +335,70 @@ async def show_invoice(
     )
 
     print(
-        f"[SHOW INVOICE] ID = {customer_id}"
+        f"[SHOW INVOICE] "
+        f"ID = {customer_id}"
     )
 
     if not customer_id:
+        try:
+            await query.edit_message_text(
+                "ID Pelanggan belum tersedia."
+            )
 
-        await query.message.reply_text(
-            "ID Pelanggan belum tersedia."
-        )
+        except Exception as error:
+            print(
+                "[INVOICE ERROR] "
+                f"{error}"
+            )
 
         return
 
     try:
-
-        customer = get_customer_by_id(
-            customer_id
+        normalized_customer_id = (
+            normalize_id(
+                customer_id
+            )
         )
 
-        if customer:
+        invoice_customer = (
+            get_invoice_customer(
+                normalized_customer_id
+            )
+        )
 
+        if invoice_customer:
             customer_name = (
-                get_customer_name(
-                    customer
+                invoice_customer.get(
+                    "pelanggan"
                 )
+                or invoice_customer.get(
+                    "customer_name"
+                )
+                or "-"
             )
 
         else:
-
             customer_name = "-"
-
-        print(
-            "[SHOW INVOICE] "
-            f"Customer = {customer_name}"
-        )
 
         invoices = (
             invoice_service
             .get_customer_invoice_data(
-                customer_id
+                normalized_customer_id
             )
         )
 
         if invoices is None:
             invoices = []
 
-        print(
-            "[SHOW INVOICE] "
-            f"Jumlah invoice = {len(invoices)}"
-        )
-
         period = get_invoice_period(
             context,
             invoices,
         )
 
-        print(
-            "[SHOW INVOICE] "
-            f"Periode = {period}"
-        )
-
         text = build_invoice_text(
-            customer_id=customer_id,
+            customer_id=(
+                normalized_customer_id
+            ),
             customer_name=customer_name,
             invoices=invoices,
             period=period,
@@ -444,9 +440,7 @@ async def show_invoice(
             and detail_chat_id
             == current_chat_id
         ):
-
             try:
-
                 await query.get_bot().edit_message_text(
                     chat_id=detail_chat_id,
                     message_id=detail_message_id,
@@ -454,50 +448,68 @@ async def show_invoice(
                     reply_markup=markup,
                 )
 
-                context.user_data[
-                    "detail_type"
-                ] = "invoice"
-
-                return
-
-            except Exception as e:
-
                 print(
-                    "[INVOICE EDIT ERROR] "
-                    f"{e}"
+                    "[INVOICE] "
+                    "Detail ditampilkan "
+                    "pada pesan yang sama."
                 )
 
-                context.user_data.pop(
-                    "detail_message_id",
-                    None,
-                )
+            except Exception as error:
+                if (
+                    "Message is not modified"
+                    not in str(error)
+                ):
+                    print(
+                        "[INVOICE EDIT ERROR] "
+                        f"{error}"
+                    )
 
-                context.user_data.pop(
-                    "detail_chat_id",
-                    None,
-                )
+                    message = (
+                        await query.get_bot()
+                        .send_message(
+                            chat_id=current_chat_id,
+                            text=text,
+                            reply_markup=markup,
+                        )
+                    )
 
-        message = (
-            await query.message.reply_text(
-                text=text,
-                reply_markup=markup,
+                    context.user_data[
+                        "detail_message_id"
+                    ] = message.message_id
+
+                    context.user_data[
+                        "detail_chat_id"
+                    ] = message.chat_id
+
+        else:
+            message = (
+                await query.get_bot()
+                .send_message(
+                    chat_id=current_chat_id,
+                    text=text,
+                    reply_markup=markup,
+                )
             )
-        )
 
-        context.user_data[
-            "detail_message_id"
-        ] = message.message_id
+            context.user_data[
+                "detail_message_id"
+            ] = message.message_id
 
-        context.user_data[
-            "detail_chat_id"
-        ] = message.chat_id
+            context.user_data[
+                "detail_chat_id"
+            ] = message.chat_id
+
+            print(
+                "[INVOICE] "
+                "Detail dikirim sebagai "
+                "pesan baru."
+            )
 
         context.user_data[
             "detail_type"
         ] = "invoice"
 
-    except Exception as e:
-
+    except Exception as error:
         print(
             "======================================"
         )
@@ -507,22 +519,84 @@ async def show_invoice(
         )
 
         print(
-            f"Customer ID : {customer_id}"
+            f"Customer ID : "
+            f"{customer_id}"
         )
 
         print(
-            f"Error Type  : {type(e).__name__}"
+            f"Error Type  : "
+            f"{type(error).__name__}"
         )
 
         print(
-            f"Error       : {e}"
+            f"Error       : "
+            f"{error}"
         )
 
         print(
             "======================================"
         )
 
-        await query.message.reply_text(
+        error_text = (
+            "❌ GAGAL MEMPROSES "
+            "DATA INVOICE\n\n"
             "Terjadi kesalahan saat "
-            "mengambil data invoice."
+            "mengambil data invoice.\n\n"
+            "Silakan coba lagi."
         )
+
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "Kembali",
+                    callback_data=(
+                        "back_to_customer_list"
+                    ),
+                )
+            ]
+        ]
+
+        markup = InlineKeyboardMarkup(
+            keyboard
+        )
+
+        try:
+            detail_message_id = (
+                context.user_data.get(
+                    "detail_message_id"
+                )
+            )
+
+            detail_chat_id = (
+                context.user_data.get(
+                    "detail_chat_id"
+                )
+            )
+
+            current_chat_id = (
+                query.message.chat_id
+            )
+
+            if (
+                detail_message_id
+                and detail_chat_id
+                == current_chat_id
+            ):
+                await query.get_bot().edit_message_text(
+                    chat_id=detail_chat_id,
+                    message_id=detail_message_id,
+                    text=error_text,
+                    reply_markup=markup,
+                )
+
+            else:
+                await query.message.reply_text(
+                    error_text,
+                    reply_markup=markup,
+                )
+
+        except Exception as fallback_error:
+            print(
+                "[INVOICE FALLBACK ERROR] "
+                f"{fallback_error}"
+            )
